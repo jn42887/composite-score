@@ -28,6 +28,10 @@
         .table-header-sortable:hover {
             background-color: var(--cavs-light-gray);
         }
+        .sorted-column-header {
+            background-color: var(--cavs-gold) !important;
+            color: var(--cavs-navy) !important;
+        }
         .modal-backdrop {
             position: fixed;
             top: 0;
@@ -85,6 +89,9 @@
             background-color: var(--cavs-gold);
             color: var(--cavs-navy);
             font-weight: bold;
+        }
+        .highlight-col {
+            background-color: #fffbeb; /* A light yellow to highlight the composite score column */
         }
     </style>
 </head>
@@ -152,23 +159,23 @@
                                 <th class="px-2 py-3 text-left font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Age">Age</th>
                                 <th class="px-2 py-3 text-left font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Pos">Pos</th>
                                 <!-- Overall -->
+                                <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable highlight-col" data-sort="Multi-Year Ovr">Ovr Comp.</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="epm">Ovr-EPM</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Ovr-xRAPM">Ovr-xRAPM</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Ovr-LEBRON">Ovr-LEBRON</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Ovr-DARKO">Ovr-DARKO</th>
-                                <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable bg-gray-200" data-sort="Multi-Year Ovr">Ovr Comp.</th>
                                 <!-- Offensive -->
+                                <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="CombinedOff">Off Comp.</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Multi-Year OEPM">Off-EPM</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="xORAPM">Off-xRAPM</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="oLEBRON">Off-LEBRON</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="oDARKO">Off-DARKO</th>
-                                <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="CombinedOff">Off Comp.</th>
                                 <!-- Defensive -->
+                                <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="CombinedDef">Def Comp.</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Multi-Year DEPM">Def-EPM</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="xDRAPM">Def-xRAPM</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="dLEBRON">Def-LEBRON</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="dDARKO">Def-DARKO</th>
-                                <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="CombinedDef">Def Comp.</th>
                             </tr>
                         </thead>
                         <tbody id="metricsTableBody" class="bg-white divide-y divide-gray-200"></tbody>
@@ -374,6 +381,7 @@
                 renderTeamChart(allPlayers);
                 renderTeamChart5Year(allPlayers);
                 updateCompareButtons();
+                updateActiveSortColumn();
             }
 
             // --- Table Rendering ---
@@ -388,21 +396,21 @@
                         <td class="px-2 py-2 text-gray-500">${p.Team}</td>
                         <td class="px-2 py-2 text-gray-500">${p.Age}</td>
                         <td class="px-2 py-2 text-gray-500">${p.Pos}</td>
+                        <td class="highlight-col">${renderMetricCell(p['Multi-Year Ovr'], p['Multi-Year Ovr_pct'])}</td>
                         ${renderMetricCell(p.epm, p.epm_pct)}
                         ${renderMetricCell(p['Ovr-xRAPM'], p['Ovr-xRAPM_pct'])}
                         ${renderMetricCell(p['Ovr-LEBRON'], p['Ovr-LEBRON_pct'])}
                         ${renderMetricCell(p['Ovr-DARKO'], p['Ovr-DARKO_pct'])}
-                        ${renderMetricCell(p['Multi-Year Ovr'], p['Multi-Year Ovr_pct'])}
+                        ${renderMetricCell(p.CombinedOff, p.CombinedOff_pct)}
                         ${renderMetricCell(p['Multi-Year OEPM'], p['Multi-Year OEPM_pct'])}
                         ${renderMetricCell(p.xORAPM, p.xORAPM_pct)}
                         ${renderMetricCell(p.oLEBRON, p.oLEBRON_pct)}
                         ${renderMetricCell(p.oDARKO, p.oDARKO_pct)}
-                        ${renderMetricCell(p.CombinedOff, p.CombinedOff_pct)}
+                        ${renderMetricCell(p.CombinedDef, p.CombinedDef_pct)}
                         ${renderMetricCell(p['Multi-Year DEPM'], p['Multi-Year DEPM_pct'])}
                         ${renderMetricCell(p.xDRAPM, p.xDRAPM_pct)}
                         ${renderMetricCell(p.dLEBRON, p.dLEBRON_pct)}
                         ${renderMetricCell(p.dDARKO, p.dDARKO_pct)}
-                        ${renderMetricCell(p.CombinedDef, p.CombinedDef_pct)}
                     </tr>`).join('');
             }
             
@@ -434,12 +442,13 @@
             }
 
             function getPercentileColor(p) {
-                if (p === undefined || p === null) return 'background-color: #E0E0E0; color: #333;';
-                if (p > 80) return 'background-color: #FDBB30; color: #041E42;'; // Gold
-                if (p > 60) return 'background-color: rgba(253, 187, 48, 0.6); color: #041E42;'; // Lighter Gold
-                if (p > 40) return 'background-color: #FFFFFF; color: #333; border: 1px solid #E0E0E0;'; // White/Gray for average
-                if (p > 20) return 'background-color: rgba(111, 38, 61, 0.5); color: white;'; // Lighter Wine
-                return 'background-color: #6F263D; color: white;'; // Wine
+                if (p === undefined || p === null) return 'background-color: #f3f4f6; color: #374151;';
+                if (p >= 90) return 'background-color: #1a9641; color: white;';
+                if (p >= 75) return 'background-color: #66c2a5; color: black;';
+                if (p >= 50) return 'background-color: #abdda4; color: black;';
+                if (p >= 25) return 'background-color: #ffffbf; color: black;';
+                if (p >= 10) return 'background-color: #fdae61; color: black;';
+                return 'background-color: #d7191c; color: white;';
             }
 
             function renderMetricCell(value, percentile) {
@@ -611,6 +620,14 @@
                 setTimeout(() => comparisonModal.classList.add('hidden'), 300);
             }
 
+            function updateActiveSortColumn() {
+                document.querySelectorAll('.sorted-column-header').forEach(th => th.classList.remove('sorted-column-header'));
+                const metricsHeader = metricsTableHead.querySelector(`[data-sort="${metricsSortState.column}"]`);
+                if(metricsHeader) metricsHeader.classList.add('sorted-column-header');
+                const projectionsHeader = projectionsTableHead.querySelector(`[data-sort="${projectionsSortState.column}"]`);
+                if(projectionsHeader) projectionsHeader.classList.add('sorted-column-header');
+            }
+            
             // --- Event Listeners & Modals ---
             searchInput.addEventListener('input', renderAll);
             addPlayerFromDropdown.addEventListener('click', () => {
@@ -619,8 +636,20 @@
                     playerSelector.value = "";
                 }
             });
-            metricsTableHead.addEventListener('click', (e) => handleSort(e, 'metrics'));
-            projectionsTableHead.addEventListener('click', (e) => handleSort(e, 'projections'));
+
+            const sortHandler = (e, tableType) => {
+                const header = e.target.closest('th');
+                if (!header?.dataset?.sort) return;
+                const sortColumn = header.dataset.sort;
+                let sortState = tableType === 'metrics' ? metricsSortState : projectionsSortState;
+                sortState.direction = (sortState.column === sortColumn && sortState.direction === 'desc') ? 'asc' : 'desc';
+                sortState.column = sortColumn;
+                renderAll();
+            };
+
+            metricsTableHead.addEventListener('click', (e) => sortHandler(e, 'metrics'));
+            projectionsTableHead.addEventListener('click', (e) => sortHandler(e, 'projections'));
+            
             document.querySelectorAll('[data-toggle]').forEach(header => {
                 header.addEventListener('click', () => {
                     document.getElementById(header.dataset.toggle).classList.toggle('hidden');
@@ -629,11 +658,11 @@
             });
 
             document.body.addEventListener('click', (e) => {
-                const compareBtn = e.target.closest('.add-compare-btn');
+                const compareBtnEl = e.target.closest('.add-compare-btn');
                 const removeCompareBtn = e.target.closest('[data-remove-compare]');
 
-                if (compareBtn) {
-                    toggleComparePlayer(compareBtn.dataset.compareId);
+                if (compareBtnEl) {
+                    toggleComparePlayer(compareBtnEl.dataset.compareId);
                 } else if(removeCompareBtn) {
                      toggleComparePlayer(removeCompareBtn.dataset.removeCompare);
                 }
@@ -641,16 +670,6 @@
             
             compareBtn.addEventListener('click', showComparisonModal);
             closeComparisonModal.addEventListener('click', hideComparisonModal);
-            
-            function handleSort(e, tableType) {
-                const header = e.target.closest('th');
-                if (!header?.dataset?.sort) return;
-                const sortColumn = header.dataset.sort;
-                let sortState = tableType === 'metrics' ? metricsSortState : projectionsSortState;
-                sortState.direction = (sortState.column === sortColumn && sortState.direction === 'desc') ? 'asc' : 'desc';
-                sortState.column = sortColumn;
-                renderAll();
-            }
             
             function setLoadingState(isLoading, isError = false) {
                  const colspan = 21;
