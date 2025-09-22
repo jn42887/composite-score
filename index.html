@@ -95,55 +95,6 @@
             border-left: 2px solid var(--cavs-gold);
             border-right: 2px solid var(--cavs-gold);
         }
-        .table-separator {
-            width: 2px;
-            background-color: var(--cavs-wine);
-            padding: 0;
-        }
-        tr:hover {
-            transform: scale(1.01);
-            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-            z-index: 10;
-            position: relative;
-        }
-        .collapsible-content {
-            max-height: 1000px; /* Adjust as needed */
-            overflow: hidden;
-            transition: max-height 0.5s ease-in-out;
-        }
-        .collapsible-content.hidden {
-            max-height: 0;
-        }
-        #scrollTopBtn {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            z-index: 99;
-            display: none;
-        }
-        @keyframes glow {
-            0%, 100% { text-shadow: 0 0 5px var(--cavs-gold), 0 0 10px var(--cavs-gold); }
-            50% { text-shadow: 0 0 20px var(--cavs-gold), 0 0 30px var(--cavs-gold); }
-        }
-        .animated-header {
-            animation: glow 3s ease-in-out infinite;
-        }
-        .loader {
-            width: 50px;
-            height: 50px;
-            border: 5px solid var(--cavs-light-gray);
-            border-bottom-color: var(--cavs-wine);
-            border-radius: 50%;
-            display: inline-block;
-            box-sizing: border-box;
-            animation: rotation 1s linear infinite;
-        }
-        @keyframes rotation {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
     </style>
 </head>
 <body class="antialiased text-gray-800">
@@ -153,7 +104,7 @@
 
         <!-- Header -->
         <header class="text-center mb-8">
-            <h1 class="text-5xl md:text-6xl font-bold animated-header" style="color: var(--cavs-wine);">NBA Player Projections</h1>
+            <h1 class="text-5xl md:text-6xl font-bold" style="color: var(--cavs-wine);">NBA Player Projections</h1>
             <p class="text-lg text-gray-700 mt-2">Interactive data for the upcoming season</p>
         </header>
 
@@ -161,8 +112,8 @@
         <main>
              <!-- Quick Jump Links -->
             <div class="flex justify-center gap-4 mb-8">
-                <a href="#metrics-section" class="bg-white text-gray-800 font-semibold py-2 px-4 rounded-lg shadow-md hover:shadow-xl hover:bg-gray-100 transition-all duration-200">Jump to Metrics</a>
-                <a href="#projections-section" class="bg-white text-gray-800 font-semibold py-2 px-4 rounded-lg shadow-md hover:shadow-xl hover:bg-gray-100 transition-all duration-200">Jump to Projections</a>
+                <a href="#metrics-section" class="bg-white text-gray-800 font-semibold py-2 px-4 rounded-lg shadow hover:bg-gray-100 transition">Jump to Metrics</a>
+                <a href="#projections-section" class="bg-white text-gray-800 font-semibold py-2 px-4 rounded-lg shadow hover:bg-gray-100 transition">Jump to Projections</a>
             </div>
 
             <!-- Data Visualization Section -->
@@ -188,7 +139,7 @@
                     <select id="playerSelector" class="w-full p-3 border border-gray-300 rounded-lg">
                         <option>Select a player to add to comparison</option>
                     </select>
-                    <button id="addPlayerFromDropdown" class="bg-[var(--cavs-wine)] text-white font-semibold py-3 px-5 rounded-lg hover:opacity-90 transition-all duration-200 shadow hover:shadow-lg">Add</button>
+                    <button id="addPlayerFromDropdown" class="bg-[var(--cavs-wine)] text-white font-semibold py-3 px-5 rounded-lg hover:opacity-90 transition">Add</button>
                 </div>
             </div>
 
@@ -215,14 +166,12 @@
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Ovr-xRAPM">Ovr-xRAPM</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Ovr-LEBRON">Ovr-LEBRON</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Ovr-DARKO">Ovr-DARKO</th>
-                                <th class="table-separator"></th>
                                 <!-- Offensive -->
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="CombinedOff">Off Comp.</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Multi-Year OEPM">Off-EPM</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="xORAPM">Off-xRAPM</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="oLEBRON">Off-LEBRON</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="oDARKO">Off-DARKO</th>
-                                <th class="table-separator"></th>
                                 <!-- Defensive -->
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="CombinedDef">Def Comp.</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Multi-Year DEPM">Def-EPM</th>
@@ -316,11 +265,6 @@
             </div>
         </div>
     </div>
-    
-    <!-- Scroll to Top Button -->
-    <button id="scrollTopBtn" class="bg-[var(--cavs-wine)] text-white rounded-full w-12 h-12 flex items-center justify-center shadow-lg hover:bg-[var(--cavs-navy)] transition">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path></svg>
-    </button>
 
 
     <script>
@@ -335,7 +279,6 @@
             const projectionsTableBody = document.getElementById('projectionsTableBody');
             const metricsTableHead = document.getElementById('metricsTableHead');
             const projectionsTableHead = document.getElementById('projectionsTableHead');
-            const scrollTopBtn = document.getElementById('scrollTopBtn');
             
             // --- Comparison Elements ---
             const playerSelector = document.getElementById('playerSelector');
@@ -468,13 +411,11 @@
                         ${renderMetricCell(p['Ovr-xRAPM'], p['Ovr-xRAPM_pct'])}
                         ${renderMetricCell(p['Ovr-LEBRON'], p['Ovr-LEBRON_pct'])}
                         ${renderMetricCell(p['Ovr-DARKO'], p['Ovr-DARKO_pct'])}
-                        <td class="table-separator"></td>
                         ${renderMetricCell(p.CombinedOff, p.CombinedOff_pct)}
                         ${renderMetricCell(p['Multi-Year OEPM'], p['Multi-Year OEPM_pct'])}
                         ${renderMetricCell(p.xORAPM, p.xORAPM_pct)}
                         ${renderMetricCell(p.oLEBRON, p.oLEBRON_pct)}
                         ${renderMetricCell(p.oDARKO, p.oDARKO_pct)}
-                        <td class="table-separator"></td>
                         ${renderMetricCell(p.CombinedDef, p.CombinedDef_pct)}
                         ${renderMetricCell(p['Multi-Year DEPM'], p['Multi-Year DEPM_pct'])}
                         ${renderMetricCell(p.xDRAPM, p.xDRAPM_pct)}
@@ -774,8 +715,8 @@
             });
             
             function setLoadingState(isLoading, isError = false) {
-                 const colspan = 22;
-                 const loadingHtml = `<tr><td colspan="${colspan}" class="text-center p-8"><div class="loader mx-auto"></div></td></tr>`;
+                 const colspan = 21;
+                 const loadingHtml = `<tr><td colspan="${colspan}" class="text-center p-8"><div class="text-gray-500">Loading player data...</div></td></tr>`;
                  const errorHtml = `<tr><td colspan="${colspan}" class="text-center p-8"><div class="text-red-500 font-semibold">Failed to load player data. Ensure 'Composite Projections.csv' is in the same folder.</div></td></tr>`;
                  if (isLoading) {
                      metricsTableBody.innerHTML = loadingHtml;
