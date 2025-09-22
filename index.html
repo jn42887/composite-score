@@ -91,7 +91,9 @@
             font-weight: bold;
         }
         .highlight-col {
-            background-color: #fffbeb; /* A light yellow to highlight the composite score column */
+            background-color: #fefce8; /* A very light yellow to highlight the composite score column */
+            border-left: 2px solid var(--cavs-gold);
+            border-right: 2px solid var(--cavs-gold);
         }
     </style>
 </head>
@@ -243,13 +245,19 @@
             </div>
             <div id="comparisonContent" class="p-6 max-h-[80vh] overflow-y-auto space-y-8">
                 <div>
-                    <h4 class="text-xl font-bold text-center mb-4">Current Metrics Comparison</h4>
+                    <h4 class="text-xl font-bold text-center mb-4">Offensive Metrics Comparison</h4>
                     <div class="relative h-96">
-                        <canvas id="comparisonMetricsChart"></canvas>
+                        <canvas id="comparisonOffensiveChart"></canvas>
+                    </div>
+                </div>
+                 <div>
+                    <h4 class="text-xl font-bold text-center mb-4">Defensive Metrics Comparison</h4>
+                    <div class="relative h-96">
+                        <canvas id="comparisonDefensiveChart"></canvas>
                     </div>
                 </div>
                 <div>
-                    <h4 class="text-xl font-bold text-center mb-4">5-Year Outlook Comparison</h4>
+                    <h4 class="text-xl font-bold text-center mb-4">5-Year Outlook Comparison (OVR)</h4>
                     <div class="relative h-96">
                          <canvas id="comparisonOutlookChart"></canvas>
                     </div>
@@ -280,7 +288,8 @@
             const compareBtn = document.getElementById('compareBtn');
             const comparisonModal = document.getElementById('comparisonModal');
             const closeComparisonModal = document.getElementById('closeComparisonModal');
-            const comparisonMetricsChartCanvas = document.getElementById('comparisonMetricsChart');
+            const comparisonOffensiveChartCanvas = document.getElementById('comparisonOffensiveChart');
+            const comparisonDefensiveChartCanvas = document.getElementById('comparisonDefensiveChart');
             const comparisonOutlookChartCanvas = document.getElementById('comparisonOutlookChart');
 
             // --- State ---
@@ -290,7 +299,8 @@
             let projectionsSortState = { column: 'Y1EPM', direction: 'desc' };
             let teamChartInstance = null;
             let teamChart5YearInstance = null;
-            let comparisonMetricsChart = null;
+            let comparisonOffensiveChart = null;
+            let comparisonDefensiveChart = null;
             let comparisonOutlookChart = null;
 
              const METRICS_FOR_PERCENTILES = [
@@ -494,7 +504,7 @@
                     type: 'bar', data: {
                         labels: teamPerformance.map(t => t.name),
                         datasets: [{ label: 'Minute-Weighted Y1 OVR', data: teamPerformance.map(t => t.value), backgroundColor: '#6F263D', borderColor: '#FDBB30', borderWidth: 1, borderRadius: 5, }]
-                    }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { title: { display: true, text: 'Projected OVR', font: { weight: 'bold' } } }, x: { title: { display: true, text: 'Team', font: { weight: 'bold' } }, ticks: { autoSkip: false, maxRotation: 45, minRotation: 45, font: { size: 10 } } } } }
+                    }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { title: { display: true, text: 'Projected OVR', font: { weight: 'bold' } } }, x: { title: { display: true, text: 'Team', font: { weight: 'bold' } }, ticks: { autoSkip: false, maxRotation: 45, minRotation: 45, font: { size: 10, weight: 'bold' } } } } }
                 });
             }
             
@@ -517,7 +527,7 @@
                     type: 'bar', data: {
                         labels: teamPerformance.map(t => t.name),
                         datasets: [{ label: '5-Year Minute-Weighted OVR', data: teamPerformance.map(t => t.value), backgroundColor: '#FDBB30', borderColor: '#6F263D', borderWidth: 1, borderRadius: 5, }]
-                    }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { title: { display: true, text: 'Projected 5-Year Avg. OVR', font: { weight: 'bold' } } }, x: { title: { display: true, text: 'Team', font: { weight: 'bold' } }, ticks: { autoSkip: false, maxRotation: 45, minRotation: 45, font: { size: 10 } } } } }
+                    }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { title: { display: true, text: 'Projected 5-Year Avg. OVR', font: { weight: 'bold' } } }, x: { title: { display: true, text: 'Team', font: { weight: 'bold' } }, ticks: { autoSkip: false, maxRotation: 45, minRotation: 45, font: { size: 10, weight: 'bold' } } } } }
                 });
             }
 
@@ -579,17 +589,31 @@
                 const players = Array.from(comparisonList.values());
                 const colors = ['#6F263D', '#FDBB30', '#041E42', '#9E9E9E', '#FFC107'];
 
-                // Metrics Bar Chart
-                const metricsLabels = ['Ovr Comp.', 'Off Comp.', 'Def Comp.'];
-                const metricsDatasets = players.map((p, i) => ({
+                // Offensive Metrics Bar Chart
+                const offLabels = ['Off Comp.', 'Off-EPM', 'Off-xRAPM', 'Off-LEBRON', 'Off-DARKO'];
+                const offDatasets = players.map((p, i) => ({
                     label: p.Player,
-                    data: [p['Multi-Year Ovr'], p.CombinedOff, p.CombinedDef],
+                    data: [p.CombinedOff, p['Multi-Year OEPM'], p.xORAPM, p.oLEBRON, p.oDARKO],
                     backgroundColor: colors[i % colors.length],
                 }));
-                if(comparisonMetricsChart) comparisonMetricsChart.destroy();
-                comparisonMetricsChart = new Chart(comparisonMetricsChartCanvas, {
+                if(comparisonOffensiveChart) comparisonOffensiveChart.destroy();
+                comparisonOffensiveChart = new Chart(comparisonOffensiveChartCanvas, {
                     type: 'bar',
-                    data: { labels: metricsLabels, datasets: metricsDatasets },
+                    data: { labels: offLabels, datasets: offDatasets },
+                    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: false } } }
+                });
+
+                 // Defensive Metrics Bar Chart
+                const defLabels = ['Def Comp.', 'Def-EPM', 'Def-xRAPM', 'Def-LEBRON', 'Def-DARKO'];
+                const defDatasets = players.map((p, i) => ({
+                    label: p.Player,
+                    data: [p.CombinedDef, p['Multi-Year DEPM'], p.xDRAPM, p.dLEBRON, p.dDARKO],
+                    backgroundColor: colors[i % colors.length],
+                }));
+                if(comparisonDefensiveChart) comparisonDefensiveChart.destroy();
+                comparisonDefensiveChart = new Chart(comparisonDefensiveChartCanvas, {
+                    type: 'bar',
+                    data: { labels: defLabels, datasets: defDatasets },
                     options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: false } } }
                 });
 
