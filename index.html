@@ -95,6 +95,11 @@
             border-left: 2px solid var(--cavs-gold);
             border-right: 2px solid var(--cavs-gold);
         }
+        .table-separator {
+            width: 2px;
+            background-color: var(--cavs-wine);
+            padding: 0;
+        }
     </style>
 </head>
 <body class="antialiased text-gray-800">
@@ -166,12 +171,14 @@
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Ovr-xRAPM">Ovr-xRAPM</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Ovr-LEBRON">Ovr-LEBRON</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Ovr-DARKO">Ovr-DARKO</th>
+                                <th class="table-separator"></th>
                                 <!-- Offensive -->
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="CombinedOff">Off Comp.</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Multi-Year OEPM">Off-EPM</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="xORAPM">Off-xRAPM</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="oLEBRON">Off-LEBRON</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="oDARKO">Off-DARKO</th>
+                                <th class="table-separator"></th>
                                 <!-- Defensive -->
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="CombinedDef">Def Comp.</th>
                                 <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Multi-Year DEPM">Def-EPM</th>
@@ -245,19 +252,19 @@
             </div>
             <div id="comparisonContent" class="p-6 max-h-[80vh] overflow-y-auto space-y-8">
                 <div>
-                    <h4 class="text-xl font-bold text-center mb-4">Offensive Metrics Comparison</h4>
+                    <h4 class="text-xl font-bold text-center mb-4">Offensive Metrics Percentile Comparison</h4>
                     <div class="relative h-96">
                         <canvas id="comparisonOffensiveChart"></canvas>
                     </div>
                 </div>
                  <div>
-                    <h4 class="text-xl font-bold text-center mb-4">Defensive Metrics Comparison</h4>
+                    <h4 class="text-xl font-bold text-center mb-4">Defensive Metrics Percentile Comparison</h4>
                     <div class="relative h-96">
                         <canvas id="comparisonDefensiveChart"></canvas>
                     </div>
                 </div>
                 <div>
-                    <h4 class="text-xl font-bold text-center mb-4">5-Year Outlook Comparison (OVR)</h4>
+                    <h4 class="text-xl font-bold text-center mb-4">5-Year Outlook Percentile Comparison (OVR)</h4>
                     <div class="relative h-96">
                          <canvas id="comparisonOutlookChart"></canvas>
                     </div>
@@ -388,8 +395,10 @@
 
                 renderMetricsTable(filteredPlayers);
                 renderProjectionsTable(filteredPlayers);
-                renderTeamChart(allPlayers);
-                renderTeamChart5Year(allPlayers);
+                if (allPlayers.length > 0) {
+                    renderTeamChart(allPlayers);
+                    renderTeamChart5Year(allPlayers);
+                }
                 updateCompareButtons();
                 updateActiveSortColumn();
             }
@@ -411,11 +420,13 @@
                         ${renderMetricCell(p['Ovr-xRAPM'], p['Ovr-xRAPM_pct'])}
                         ${renderMetricCell(p['Ovr-LEBRON'], p['Ovr-LEBRON_pct'])}
                         ${renderMetricCell(p['Ovr-DARKO'], p['Ovr-DARKO_pct'])}
+                        <td class="table-separator"></td>
                         ${renderMetricCell(p.CombinedOff, p.CombinedOff_pct)}
                         ${renderMetricCell(p['Multi-Year OEPM'], p['Multi-Year OEPM_pct'])}
                         ${renderMetricCell(p.xORAPM, p.xORAPM_pct)}
                         ${renderMetricCell(p.oLEBRON, p.oLEBRON_pct)}
                         ${renderMetricCell(p.oDARKO, p.oDARKO_pct)}
+                        <td class="table-separator"></td>
                         ${renderMetricCell(p.CombinedDef, p.CombinedDef_pct)}
                         ${renderMetricCell(p['Multi-Year DEPM'], p['Multi-Year DEPM_pct'])}
                         ${renderMetricCell(p.xDRAPM, p.xDRAPM_pct)}
@@ -588,50 +599,48 @@
             function showComparisonModal() {
                 const players = Array.from(comparisonList.values());
                 const colors = ['#6F263D', '#FDBB30', '#041E42', '#9E9E9E', '#FFC107'];
+                const commonOptions = {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true, max: 100, title: { display: true, text: 'Percentile Rank' } } }
+                };
 
                 // Offensive Metrics Bar Chart
                 const offLabels = ['Off Comp.', 'Off-EPM', 'Off-xRAPM', 'Off-LEBRON', 'Off-DARKO'];
                 const offDatasets = players.map((p, i) => ({
                     label: p.Player,
-                    data: [p.CombinedOff, p['Multi-Year OEPM'], p.xORAPM, p.oLEBRON, p.oDARKO],
+                    data: [p.CombinedOff_pct, p['Multi-Year OEPM_pct'], p.xORAPM_pct, p.oLEBRON_pct, p.oDARKO_pct],
                     backgroundColor: colors[i % colors.length],
                 }));
                 if(comparisonOffensiveChart) comparisonOffensiveChart.destroy();
                 comparisonOffensiveChart = new Chart(comparisonOffensiveChartCanvas, {
-                    type: 'bar',
-                    data: { labels: offLabels, datasets: offDatasets },
-                    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: false } } }
+                    type: 'bar', data: { labels: offLabels, datasets: offDatasets }, options: commonOptions
                 });
 
-                 // Defensive Metrics Bar Chart
+                // Defensive Metrics Bar Chart
                 const defLabels = ['Def Comp.', 'Def-EPM', 'Def-xRAPM', 'Def-LEBRON', 'Def-DARKO'];
                 const defDatasets = players.map((p, i) => ({
                     label: p.Player,
-                    data: [p.CombinedDef, p['Multi-Year DEPM'], p.xDRAPM, p.dLEBRON, p.dDARKO],
+                    data: [p.CombinedDef_pct, p['Multi-Year DEPM_pct'], p.xDRAPM_pct, p.dLEBRON_pct, p.dDARKO_pct],
                     backgroundColor: colors[i % colors.length],
                 }));
                 if(comparisonDefensiveChart) comparisonDefensiveChart.destroy();
                 comparisonDefensiveChart = new Chart(comparisonDefensiveChartCanvas, {
-                    type: 'bar',
-                    data: { labels: defLabels, datasets: defDatasets },
-                    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: false } } }
+                    type: 'bar', data: { labels: defLabels, datasets: defDatasets }, options: commonOptions
                 });
 
                 // Outlook Line Chart
                 const outlookLabels = ['Y1', 'Y2', 'Y3', 'Y4', 'Y5'];
                 const outlookDatasets = players.map((p, i) => ({
                     label: p.Player,
-                    data: [p.Y1EPM, p.Y2EPM, p.Y3EPM, p.Y4EPM, p.Y5EPM],
+                    data: [p.Y1EPM_pct, p.Y2EPM_pct, p.Y3EPM_pct, p.Y4EPM_pct, p.Y5EPM_pct],
                     borderColor: colors[i % colors.length],
-                    backgroundColor: colors[i % colors.length] + '33', // semi-transparent fill
-                    fill: false,
-                    tension: 0.1
+                    backgroundColor: colors[i % colors.length] + '33',
+                    fill: false, tension: 0.1
                 }));
-                 if(comparisonOutlookChart) comparisonOutlookChart.destroy();
+                if(comparisonOutlookChart) comparisonOutlookChart.destroy();
                 comparisonOutlookChart = new Chart(comparisonOutlookChartCanvas, {
-                    type: 'line',
-                    data: { labels: outlookLabels, datasets: outlookDatasets },
-                    options: { responsive: true, maintainAspectRatio: false, scales: { y: { title: { display: true, text: 'Projected OVR' } } } }
+                    type: 'line', data: { labels: outlookLabels, datasets: outlookDatasets }, options: commonOptions
                 });
 
 
@@ -713,3 +722,4 @@
     </script>
 </body>
 </html>
+
