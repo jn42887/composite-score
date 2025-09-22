@@ -675,18 +675,11 @@
             projectionsTableHead.addEventListener('click', (e) => sortHandler(e, 'projections'));
             
             document.querySelectorAll('[data-toggle]').forEach(header => {
-                header.addEventListener('click', (e) => {
-                    const content = document.getElementById(header.dataset.toggle);
-                    const section = header.closest('.bg-white');
-                    section.classList.toggle('section-collapsed');
-                    if (content.classList.contains('hidden')) {
-                        content.classList.remove('hidden');
-                    } else {
-                        content.classList.add('hidden');
-                    }
+                header.addEventListener('click', () => {
+                    document.getElementById(header.dataset.toggle).classList.toggle('hidden');
+                    header.closest('.bg-white').classList.toggle('section-collapsed');
                 });
             });
-
 
             document.body.addEventListener('click', (e) => {
                 const compareBtnEl = e.target.closest('.add-compare-btn');
@@ -701,18 +694,6 @@
             
             compareBtn.addEventListener('click', showComparisonModal);
             closeComparisonModal.addEventListener('click', hideComparisonModal);
-
-            window.addEventListener('scroll', () => {
-                if (document.body.scrollTop > 100 || document.documentElement.scrollTop > 100) {
-                    scrollTopBtn.style.display = "block";
-                } else {
-                    scrollTopBtn.style.display = "none";
-                }
-            });
-
-            scrollTopBtn.addEventListener('click', () => {
-                window.scrollTo({top: 0, behavior: 'smooth'});
-            });
             
             function setLoadingState(isLoading, isError = false) {
                  const colspan = 21;
@@ -732,4 +713,3 @@
     </script>
 </body>
 </html>
-
