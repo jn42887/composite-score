@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NBA Player Projections Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* Light gray background */
+        }
+        .table-header-sortable {
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out;
+        }
+        .table-header-sortable:hover {
+            background-color: #e5e7eb; /* Lighter gray on hover */
+        }
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 50;
+        }
+        .modal-content {
+            max-width: 90vw;
+            width: 600px;
+        }
+        /* Custom scrollbar for better aesthetics */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body class="antialiased text-gray-800">
+
+    <!-- Main Container -->
+    <div class="container mx-auto p-4 md:p-8">
+
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-bold text-gray-900">NBA Player Projections</h1>
+            <p class="text-lg text-gray-600 mt-2">Interactive data for the upcoming season</p>
+        </header>
+
+        <!-- Main Content -->
+        <main>
+            <!-- Data Visualization Section -->
+            <div class="bg-white p-6 rounded-2xl shadow-lg mb-8">
+                <h2 class="text-2xl font-bold mb-4 text-center">Team Average Overall EPM</h2>
+                <div class="relative h-96">
+                    <canvas id="teamChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Player Data Table Section -->
+            <div class="bg-white p-6 rounded-2xl shadow-lg">
+                <!-- Search and Filters -->
+                <div class="mb-6">
+                    <input type="text" id="searchInput" placeholder="Search by player or team..." class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition">
+                </div>
+                
+                <!-- Table Wrapper for scrolling on small screens -->
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-100">
+                            <tr>
+                                <!-- Table Headers: added data-sort attributes for JS sorting -->
+                                <th class="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Player">Player</th>
+                                <th class="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Team">Team</th>
+                                <th class="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Age">Age</th>
+                                <th class="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Pos">Pos</th>
+                                <th class="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="epm">EPM</th>
+                                <th class="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="war">WAR</th>
+                                <th class="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="CombinedOff">Offense</th>
+                                <th class="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="CombinedDef">Defense</th>
+                                <th class="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Y1EPM">1-Yr Proj. EPM</th>
+                            </tr>
+                        </thead>
+                        <tbody id="playerTableBody" class="bg-white divide-y divide-gray-200">
+                            <!-- Loading State -->
+                            <tr>
+                                <td colspan="9" class="text-center p-8">
+                                    <div class="text-gray-500">Loading player data...</div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Player Details Modal -->
+    <div id="playerModal" class="modal-backdrop hidden">
+        <div class="bg-white rounded-2xl shadow-2xl modal-content overflow-hidden transform transition-all duration-300 scale-95 opacity-0">
+            <!-- Modal Header -->
+            <div id="modalHeader" class="p-6 border-b border-gray-200 flex justify-between items-center">
+                <div>
+                    <h3 id="modalPlayerName" class="text-2xl font-bold"></h3>
+                    <p id="modalPlayerInfo" class="text-gray-600"></p>
+                </div>
+                <button id="closeModal" class="text-gray-400 hover:text-gray-800 transition">&times;</button>
+            </div>
+            <!-- Modal Body -->
+            <div class="p-6">
+                <h4 class="font-bold text-lg mb-4">Player Ratings & Projections</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Metrics Chart -->
+                    <div>
+                         <canvas id="playerMetricsChart"></canvas>
+                    </div>
+                    <!-- Detailed Stats -->
+                    <div id="modalStats" class="space-y-3 text-sm">
+                        <!-- Detailed stats will be injected here by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const CSV_PATH = 'Composite Projections.csv';
+            const tableBody = document.getElementById('playerTableBody');
+            const searchInput = document.getElementById('searchInput');
+            const teamChartCanvas = document.getElementById('teamChart');
+
+            // Modal elements
+            const playerModal = document.getElementById('playerModal');
+            const modalHeader = document.getElementById('modalHeader');
+            const modalPlayerName = document.getElementById('modalPlayerName');
+            const modalPlayerInfo = document.getElementById('modalPlayerInfo');
+            const modalStats = document.getElementById('modalStats');
+            const closeModal = document.getElementById('closeModal');
+            const playerMetricsChartCanvas = document.getElementById('playerMetricsChart');
+            
+            let allPlayers = [];
+            let sortState = { column: 'epm', direction: 'desc' }; // Initial sort
+            let teamChartInstance = null;
+            let playerChartInstance = null;
+
+            // --- Data Loading and Processing ---
+            async function loadData() {
+                try {
+                    const response = await fetch(CSV_PATH);
+                    const csvText = await response.text();
+                    Papa.parse(csvText, {
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: (results) => {
+                            allPlayers = results.data.map(processRow).filter(p => p.Player);
+                            renderTable(allPlayers);
+                            renderTeamChart(allPlayers);
+                        }
+                    });
+                } catch (error) {
+                    console.error("Error loading or parsing CSV data:", error);
+                    tableBody.innerHTML = `<tr><td colspan="9" class="text-center p-8 text-red-500">Failed to load player data.</td></tr>`;
+                }
+            }
+            
+            function processRow(row) {
+                // Convert relevant fields to numbers for sorting and calculations
+                const numericFields = ['Age', 'oepm', 'depm', 'epm', 'war', 'CombinedOff', 'CombinedDef', 'Y1EPM', 'Y1WAR', 'Y1PV', 'Three-Year PV Avg', 'Five-Year PV Avg'];
+                const processed = { ...row };
+                numericFields.forEach(field => {
+                    processed[field] = parseFloat(row[field]) || 0;
+                });
+                return processed;
+            }
+
+            // --- Table Rendering and Sorting ---
+            function renderTable(players) {
+                // First sort the data
+                const sortedPlayers = sortData(players, sortState.column, sortState.direction);
+
+                if (sortedPlayers.length === 0) {
+                    tableBody.innerHTML = `<tr><td colspan="9" class="text-center p-8 text-gray-500">No players found.</td></tr>`;
+                    return;
+                }
+
+                tableBody.innerHTML = sortedPlayers.map(player => `
+                    <tr class="hover:bg-gray-50 cursor-pointer transition" data-player='${JSON.stringify(player)}'>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="font-medium text-gray-900">${player.Player}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${player.Team}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${player.Age}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${player.Pos}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold ${player.epm > 0 ? 'text-green-600' : 'text-red-600'}">${player.epm.toFixed(1)}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${player.war.toFixed(1)}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-blue-600">${player.CombinedOff.toFixed(1)}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-indigo-600">${player.CombinedDef.toFixed(1)}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${player.Y1EPM.toFixed(1)}</td>
+                    </tr>
+                `).join('');
+            }
+
+            function sortData(players, column, direction) {
+                 return [...players].sort((a, b) => {
+                    const valA = a[column];
+                    const valB = b[column];
+
+                    let comparison = 0;
+                    if (valA > valB) {
+                        comparison = 1;
+                    } else if (valA < valB) {
+                        comparison = -1;
+                    }
+                    return direction === 'desc' ? comparison * -1 : comparison;
+                });
+            }
+
+            // --- Charting ---
+            function renderTeamChart(players) {
+                const teams = {};
+                players.forEach(p => {
+                    if (!p.Team) return;
+                    if (!teams[p.Team]) {
+                        teams[p.Team] = { totalEPM: 0, count: 0 };
+                    }
+                    teams[p.Team].totalEPM += p.epm;
+                    teams[p.Team].count++;
+                });
+
+                const teamLabels = Object.keys(teams).sort();
+                const teamData = teamLabels.map(team => teams[team].totalEPM / teams[team].count);
+                
+                if(teamChartInstance) teamChartInstance.destroy();
+
+                teamChartInstance = new Chart(teamChartCanvas, {
+                    type: 'bar',
+                    data: {
+                        labels: teamLabels,
+                        datasets: [{
+                            label: 'Average Team EPM',
+                            data: teamData,
+                            backgroundColor: 'rgba(79, 70, 229, 0.8)',
+                            borderColor: 'rgba(79, 70, 229, 1)',
+                            borderWidth: 1,
+                            borderRadius: 5,
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: false,
+                                title: { display: true, text: 'Average EPM' }
+                            },
+                            x: {
+                                ticks: {
+                                    font: { size: 10 }
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: (context) => `Avg EPM: ${context.parsed.y.toFixed(2)}`
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+            
+            function renderPlayerChart(player) {
+                if(playerChartInstance) playerChartInstance.destroy();
+                
+                playerChartInstance = new Chart(playerMetricsChartCanvas, {
+                    type: 'radar',
+                    data: {
+                        labels: ['Overall EPM', 'Offense', 'Defense', '1-Yr Proj. EPM', 'WAR'],
+                        datasets: [{
+                            label: player.Player,
+                            data: [
+                                player.epm, 
+                                player.CombinedOff,
+                                player.CombinedDef,
+                                player.Y1EPM,
+                                player.war,
+                            ],
+                            backgroundColor: 'rgba(79, 70, 229, 0.2)',
+                            borderColor: 'rgba(79, 70, 229, 1)',
+                            pointBackgroundColor: 'rgba(79, 70, 229, 1)',
+                        }]
+                    },
+                    options: {
+                       responsive: true,
+                       maintainAspectRatio: true,
+                       scales: {
+                           r: {
+                               angleLines: { display: false },
+                               suggestedMin: -5,
+                               suggestedMax: 10,
+                               pointLabels: { font: { size: 12 } }
+                           }
+                       },
+                       plugins: {
+                           legend: { display: false }
+                       }
+                    }
+                });
+            }
+
+            // --- Event Listeners ---
+            searchInput.addEventListener('input', (e) => {
+                const searchTerm = e.target.value.toLowerCase();
+                const filteredPlayers = allPlayers.filter(player => 
+                    player.Player.toLowerCase().includes(searchTerm) || 
+                    player.Team.toLowerCase().includes(searchTerm)
+                );
+                renderTable(filteredPlayers);
+            });
+            
+            document.querySelector('thead').addEventListener('click', (e) => {
+                const header = e.target.closest('th');
+                if (header && header.dataset.sort) {
+                    const newSortColumn = header.dataset.sort;
+                    let newDirection = 'desc';
+                    if (sortState.column === newSortColumn && sortState.direction === 'desc') {
+                        newDirection = 'asc';
+                    }
+                    sortState = { column: newSortColumn, direction: newDirection };
+                    
+                    // Re-render with current view (filtered or all)
+                    const currentSearchTerm = searchInput.value.toLowerCase();
+                    const playersToRender = currentSearchTerm 
+                        ? allPlayers.filter(p => p.Player.toLowerCase().includes(currentSearchTerm) || p.Team.toLowerCase().includes(currentSearchTerm))
+                        : allPlayers;
+
+                    renderTable(playersToRender);
+                }
+            });
+
+            tableBody.addEventListener('click', (e) => {
+                const row = e.target.closest('tr');
+                if (row && row.dataset.player) {
+                    const playerData = JSON.parse(row.dataset.player);
+                    showPlayerModal(playerData);
+                }
+            });
+            
+            closeModal.addEventListener('click', hidePlayerModal);
+            playerModal.addEventListener('click', (e) => {
+                if(e.target === playerModal) {
+                    hidePlayerModal();
+                }
+            });
+
+
+            // --- Modal Logic ---
+            function showPlayerModal(player) {
+                modalPlayerName.textContent = player.Player;
+                modalPlayerInfo.textContent = `${player.Pos} | Age: ${player.Age} | Team: ${player.Team}`;
+                
+                // Populate detailed stats
+                modalStats.innerHTML = `
+                    <div class="flex justify-between"><span>Overall EPM:</span><span class="font-semibold">${player.epm.toFixed(2)}</span></div>
+                    <div class="flex justify-between"><span>Overall WAR:</span><span class="font-semibold">${player.war.toFixed(2)}</span></div>
+                    <div class="flex justify-between"><span>Offensive EPM:</span><span class="font-semibold">${player.oepm.toFixed(2)}</span></div>
+                    <div class="flex justify-between"><span>Defensive EPM:</span><span class="font-semibold">${player.depm.toFixed(2)}</span></div>
+                    <hr class="my-2">
+                    <div class="flex justify-between"><span>1-Year Projected WAR:</span><span class="font-semibold">${player.Y1WAR.toFixed(2)}</span></div>
+                    <div class="flex justify-between"><span>3-Year Projected Value:</span><span class="font-semibold">${player['Three-Year PV Avg']}</span></div>
+                    <div class="flex justify-between"><span>5-Year Projected Value:</span><span class="font-semibold">${player['Five-Year PV Avg']}</span></div>
+                `;
+
+                renderPlayerChart(player);
+
+                playerModal.classList.remove('hidden');
+                setTimeout(() => {
+                    playerModal.querySelector('.modal-content').classList.remove('scale-95', 'opacity-0');
+                }, 10);
+            }
+            
+            function hidePlayerModal() {
+                 playerModal.querySelector('.modal-content').classList.add('scale-95', 'opacity-0');
+                 setTimeout(() => {
+                    playerModal.classList.add('hidden');
+                 }, 300);
+            }
+
+            // --- Initial Load ---
+            loadData();
+        });
+    </script>
+</body>
+</html>
