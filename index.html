@@ -406,7 +406,7 @@
                         <td class="px-2 py-2 text-gray-500">${p.Team}</td>
                         <td class="px-2 py-2 text-gray-500">${p.Age}</td>
                         <td class="px-2 py-2 text-gray-500">${p.Pos}</td>
-                        <td class="highlight-col">${renderMetricCell(p['Multi-Year Ovr'], p['Multi-Year Ovr_pct'])}</td>
+                        ${renderMetricCell(p['Multi-Year Ovr'], p['Multi-Year Ovr_pct'], 'highlight-col')}
                         ${renderMetricCell(p.epm, p.epm_pct)}
                         ${renderMetricCell(p['Ovr-xRAPM'], p['Ovr-xRAPM_pct'])}
                         ${renderMetricCell(p['Ovr-LEBRON'], p['Ovr-LEBRON_pct'])}
@@ -461,9 +461,9 @@
                 return 'background-color: #d7191c; color: white;';
             }
 
-            function renderMetricCell(value, percentile) {
+            function renderMetricCell(value, percentile, additionalClasses = '') {
                 const style = getPercentileColor(percentile);
-                return `<td><div class="percentile-cell" style="${style}">
+                return `<td class="${additionalClasses}"><div class="percentile-cell" style="${style}">
                     <div class="percentile-value">${(value || 0).toFixed(1)}</div>
                     <div class="percentile-rank">(${(percentile || 0).toFixed(0)}%)</div>
                 </div></td>`;
