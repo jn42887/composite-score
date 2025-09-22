@@ -123,9 +123,15 @@
                 </div>
             </div>
 
-            <!-- Search Filter -->
+            <!-- Search & Compare Section -->
             <div class="mb-8 bg-white p-6 rounded-2xl shadow-lg">
-                 <input type="text" id="searchInput" placeholder="Search by player or team..." class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--cavs-gold)] transition">
+                <input type="text" id="searchInput" placeholder="Search by player or team..." class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--cavs-gold)] transition">
+                <div class="mt-4 flex items-center gap-2">
+                    <select id="playerSelector" class="w-full p-3 border border-gray-300 rounded-lg">
+                        <option>Select a player to add to comparison</option>
+                    </select>
+                    <button id="addPlayerFromDropdown" class="bg-[var(--cavs-wine)] text-white font-semibold py-3 px-5 rounded-lg hover:opacity-90 transition">Add</button>
+                </div>
             </div>
 
             <!-- Player Metrics Table -->
@@ -207,28 +213,6 @@
             </div>
         </main>
     </div>
-
-    <!-- Player Details Modal -->
-    <div id="playerModal" class="modal-backdrop hidden">
-        <div class="bg-white rounded-2xl shadow-2xl modal-content overflow-hidden transform transition-all duration-300 scale-95 opacity-0">
-             <div class="p-6 border-b border-gray-200 flex justify-between items-center">
-                <div>
-                    <h3 id="modalPlayerName" class="text-2xl font-bold"></h3>
-                    <p id="modalPlayerInfo" class="text-gray-600"></p>
-                </div>
-                <button id="closeModal" class="text-gray-400 hover:text-gray-800 transition text-3xl leading-none">&times;</button>
-            </div>
-            <div class="p-6 max-h-[80vh] overflow-y-auto">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <h4 class="font-bold text-lg mb-2">Key Metrics</h4>
-                        <canvas id="playerMetricsChart"></canvas>
-                    </div>
-                    <div id="modalStats" class="space-y-2 text-sm"></div>
-                </div>
-            </div>
-        </div>
-    </div>
     
     <!-- Player Comparison Tray -->
     <div id="comparisonTray" class="fixed bottom-0 left-0 right-0 bg-white p-4 shadow-2xl transform translate-y-full transition-transform duration-300 z-40">
@@ -250,8 +234,19 @@
                 <h3 class="text-2xl font-bold" style="color: var(--cavs-navy);">Player Comparison</h3>
                 <button id="closeComparisonModal" class="text-gray-400 hover:text-gray-800 transition text-3xl leading-none">&times;</button>
             </div>
-            <div id="comparisonContent" class="p-6 max-h-[80vh] overflow-y-auto">
-                <!-- Comparison table will be injected here -->
+            <div id="comparisonContent" class="p-6 max-h-[80vh] overflow-y-auto space-y-8">
+                <div>
+                    <h4 class="text-xl font-bold text-center mb-4">Current Metrics Comparison</h4>
+                    <div class="relative h-96">
+                        <canvas id="comparisonMetricsChart"></canvas>
+                    </div>
+                </div>
+                <div>
+                    <h4 class="text-xl font-bold text-center mb-4">5-Year Outlook Comparison</h4>
+                    <div class="relative h-96">
+                         <canvas id="comparisonOutlookChart"></canvas>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -269,31 +264,27 @@
             const projectionsTableBody = document.getElementById('projectionsTableBody');
             const metricsTableHead = document.getElementById('metricsTableHead');
             const projectionsTableHead = document.getElementById('projectionsTableHead');
-
-            // --- Modal Elements ---
-            const playerModal = document.getElementById('playerModal');
-            const modalPlayerName = document.getElementById('modalPlayerName');
-            const modalPlayerInfo = document.getElementById('modalPlayerInfo');
-            const modalStats = document.getElementById('modalStats');
-            const closeModal = document.getElementById('closeModal');
-            const playerMetricsChartCanvas = document.getElementById('playerMetricsChart');
             
             // --- Comparison Elements ---
+            const playerSelector = document.getElementById('playerSelector');
+            const addPlayerFromDropdown = document.getElementById('addPlayerFromDropdown');
             const comparisonTray = document.getElementById('comparisonTray');
             const comparisonPlayerList = document.getElementById('comparisonPlayerList');
             const compareBtn = document.getElementById('compareBtn');
             const comparisonModal = document.getElementById('comparisonModal');
             const closeComparisonModal = document.getElementById('closeComparisonModal');
-            const comparisonContent = document.getElementById('comparisonContent');
+            const comparisonMetricsChartCanvas = document.getElementById('comparisonMetricsChart');
+            const comparisonOutlookChartCanvas = document.getElementById('comparisonOutlookChart');
 
             // --- State ---
             let allPlayers = [];
-            let comparisonList = [];
+            let comparisonList = new Map(); // Use a Map for easier lookups and ordering
             let metricsSortState = { column: 'Multi-Year Ovr', direction: 'desc' };
             let projectionsSortState = { column: 'Y1EPM', direction: 'desc' };
             let teamChartInstance = null;
             let teamChart5YearInstance = null;
-            let playerChartInstance = null;
+            let comparisonMetricsChart = null;
+            let comparisonOutlookChart = null;
 
              const METRICS_FOR_PERCENTILES = [
                 'Multi-Year OEPM', 'xORAPM', 'oLEBRON', 'oDARKO', 'CombinedOff',
@@ -313,14 +304,17 @@
                         header: true,
                         skipEmptyLines: true,
                         complete: (results) => {
-                            allPlayers = results.data.map(processRow).filter(p => p.Player);
+                            metricsTableBody.innerHTML = '';
+                            projectionsTableBody.innerHTML = '';
+                            allPlayers = results.data.map(processRow).filter(p => p.Player).sort((a,b) => a.Player.localeCompare(b.Player));
                             calculateAllPercentiles(allPlayers);
+                            populateCompareDropdown();
                             renderAll();
                         }
                     });
                 } catch (error) {
                     console.error("Error loading or parsing CSV data:", error);
-                    setLoadingState(true, true);
+                    setLoadingState(false, true);
                 }
             }
             
@@ -369,6 +363,7 @@
 
             // --- Full Re-render Function ---
             function renderAll() {
+                setLoadingState(false);
                 const searchTerm = searchInput.value.toLowerCase();
                 const filteredPlayers = searchTerm
                     ? allPlayers.filter(p => p.Player.toLowerCase().includes(searchTerm) || p.Team.toLowerCase().includes(searchTerm))
@@ -389,10 +384,10 @@
                         <td class="px-2 py-2 text-center align-middle">
                             <button data-compare-id="${p.Player}" class="add-compare-btn text-xl w-6 h-6 rounded-full flex items-center justify-center border-2 border-gray-300 hover:border-[var(--cavs-gold)] transition">+</button>
                         </td>
-                        <td class="px-2 py-2 font-medium text-gray-900 whitespace-nowrap cursor-pointer">${p.Player}</td>
-                        <td class="px-2 py-2 text-gray-500 cursor-pointer">${p.Team}</td>
-                        <td class="px-2 py-2 text-gray-500 cursor-pointer">${p.Age}</td>
-                        <td class="px-2 py-2 text-gray-500 cursor-pointer">${p.Pos}</td>
+                        <td class="px-2 py-2 font-medium text-gray-900 whitespace-nowrap">${p.Player}</td>
+                        <td class="px-2 py-2 text-gray-500">${p.Team}</td>
+                        <td class="px-2 py-2 text-gray-500">${p.Age}</td>
+                        <td class="px-2 py-2 text-gray-500">${p.Pos}</td>
                         ${renderMetricCell(p.epm, p.epm_pct)}
                         ${renderMetricCell(p['Ovr-xRAPM'], p['Ovr-xRAPM_pct'])}
                         ${renderMetricCell(p['Ovr-LEBRON'], p['Ovr-LEBRON_pct'])}
@@ -418,10 +413,10 @@
                         <td class="px-2 py-2 text-center align-middle">
                             <button data-compare-id="${p.Player}" class="add-compare-btn text-xl w-6 h-6 rounded-full flex items-center justify-center border-2 border-gray-300 hover:border-[var(--cavs-gold)] transition">+</button>
                         </td>
-                        <td class="px-2 py-2 font-medium text-gray-900 whitespace-nowrap cursor-pointer">${p.Player}</td>
-                        <td class="px-2 py-2 text-gray-500 cursor-pointer">${p.Team}</td>
-                        <td class="px-2 py-2 text-gray-500 cursor-pointer">${p.Age}</td>
-                        <td class="px-2 py-2 text-gray-500 cursor-pointer">${p.Pos}</td>
+                        <td class="px-2 py-2 font-medium text-gray-900 whitespace-nowrap">${p.Player}</td>
+                        <td class="px-2 py-2 text-gray-500">${p.Team}</td>
+                        <td class="px-2 py-2 text-gray-500">${p.Age}</td>
+                        <td class="px-2 py-2 text-gray-500">${p.Pos}</td>
                         ${renderMetricCell(p.Y1EPM, p.Y1EPM_pct)}
                         <td class="px-2 py-2 text-gray-700 font-semibold text-center whitespace-nowrap">${p.Y1PV}</td>
                         ${renderMetricCell(p.Y2EPM, p.Y2EPM_pct)}
@@ -490,7 +485,7 @@
                     type: 'bar', data: {
                         labels: teamPerformance.map(t => t.name),
                         datasets: [{ label: 'Minute-Weighted Y1 OVR', data: teamPerformance.map(t => t.value), backgroundColor: '#6F263D', borderColor: '#FDBB30', borderWidth: 1, borderRadius: 5, }]
-                    }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { autoSkip: false, maxRotation: 45, minRotation: 45, font: { size: 10 } } } } }
+                    }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { title: { display: true, text: 'Projected OVR', font: { weight: 'bold' } } }, x: { title: { display: true, text: 'Team', font: { weight: 'bold' } }, ticks: { autoSkip: false, maxRotation: 45, minRotation: 45, font: { size: 10 } } } } }
                 });
             }
             
@@ -513,26 +508,38 @@
                     type: 'bar', data: {
                         labels: teamPerformance.map(t => t.name),
                         datasets: [{ label: '5-Year Minute-Weighted OVR', data: teamPerformance.map(t => t.value), backgroundColor: '#FDBB30', borderColor: '#6F263D', borderWidth: 1, borderRadius: 5, }]
-                    }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { autoSkip: false, maxRotation: 45, minRotation: 45, font: { size: 10 } } } } }
+                    }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { title: { display: true, text: 'Projected 5-Year Avg. OVR', font: { weight: 'bold' } } }, x: { title: { display: true, text: 'Team', font: { weight: 'bold' } }, ticks: { autoSkip: false, maxRotation: 45, minRotation: 45, font: { size: 10 } } } } }
                 });
             }
 
             // --- Player Comparison Logic ---
+            function populateCompareDropdown() {
+                playerSelector.innerHTML = '<option value="">Select a player to compare...</option>';
+                allPlayers.forEach(p => {
+                    const option = document.createElement('option');
+                    option.value = p.Player;
+                    option.textContent = p.Player;
+                    playerSelector.appendChild(option);
+                });
+            }
+
             function toggleComparePlayer(playerId) {
-                const playerIndex = comparisonList.findIndex(p => p.Player === playerId);
-                if (playerIndex > -1) {
-                    comparisonList.splice(playerIndex, 1);
+                const player = allPlayers.find(p => p.Player === playerId);
+                if (!player) return;
+
+                if (comparisonList.has(playerId)) {
+                    comparisonList.delete(playerId);
                 } else {
-                    const player = allPlayers.find(p => p.Player === playerId);
-                    if (player) comparisonList.push(player);
+                    comparisonList.set(playerId, player);
                 }
                 renderComparisonTray();
                 updateCompareButtons();
             }
 
             function renderComparisonTray() {
-                if (comparisonList.length > 0) {
-                    comparisonPlayerList.innerHTML = comparisonList.map(p => `
+                const players = Array.from(comparisonList.values());
+                if (players.length > 0) {
+                    comparisonPlayerList.innerHTML = players.map(p => `
                         <div class="flex items-center gap-2 bg-gray-100 rounded-full pr-2">
                             <span class="pl-3 text-sm font-semibold">${p.Player}</span>
                             <button data-remove-compare="${p.Player}" class="text-red-500 hover:text-red-700 font-bold">&times;</button>
@@ -542,14 +549,14 @@
                 } else {
                     comparisonTray.classList.add('translate-y-full');
                 }
-                compareBtn.textContent = `Compare (${comparisonList.length})`;
-                compareBtn.disabled = comparisonList.length < 2;
+                compareBtn.textContent = `Compare (${players.length})`;
+                compareBtn.disabled = players.length < 2;
             }
 
             function updateCompareButtons() {
                 document.querySelectorAll('.add-compare-btn').forEach(btn => {
                     const playerId = btn.dataset.compareId;
-                    if (comparisonList.some(p => p.Player === playerId)) {
+                    if (comparisonList.has(playerId)) {
                         btn.classList.add('selected');
                         btn.textContent = '✓';
                     } else {
@@ -560,36 +567,41 @@
             }
             
             function showComparisonModal() {
-                let tableHTML = '<table class="w-full text-xs text-left"><thead><tr><th class="p-2 border-b-2 border-gray-300 font-bold">Metric</th>';
-                comparisonList.forEach(p => {
-                    tableHTML += `<th class="p-2 border-b-2 border-gray-300 font-bold text-center">${p.Player}</th>`;
-                });
-                tableHTML += '</tr></thead><tbody>';
+                const players = Array.from(comparisonList.values());
+                const colors = ['#6F263D', '#FDBB30', '#041E42', '#9E9E9E', '#FFC107'];
 
-                const metricsToShow = [
-                    { label: 'Y1 OVR', key: 'Y1EPM' }, { label: 'Y1 PV', key: 'Y1PV', isCurrency: true },
-                    { label: 'Y2 OVR', key: 'Y2EPM' }, { label: 'Y2 PV', key: 'Y2PV', isCurrency: true },
-                    { label: 'Y3 OVR', key: 'Y3EPM' }, { label: 'Y3 PV', key: 'Y3PV', isCurrency: true },
-                    { label: 'Y4 OVR', key: 'Y4EPM' }, { label: 'Y4 PV', key: 'Y4PV', isCurrency: true },
-                    { label: 'Y5 OVR', key: 'Y5EPM' }, { label: 'Y5 PV', key: 'Y5PV', isCurrency: true },
-                    { label: '3-Yr PV Avg', key: 'Three-Year PV Avg', isCurrency: true },
-                    { label: '5-Yr PV Avg', key: 'Five-Year PV Avg', isCurrency: true },
-                ];
-                
-                metricsToShow.forEach(metric => {
-                    tableHTML += `<tr class="border-t"><td class="p-2 font-semibold">${metric.label}</td>`;
-                    comparisonList.forEach(player => {
-                        if (metric.isCurrency) {
-                            tableHTML += `<td class="p-2 text-center font-semibold">${player[metric.key]}</td>`;
-                        } else {
-                             tableHTML += `<td class="p-2">${renderMetricCell(player[metric.key], player[`${metric.key}_pct`])}</td>`;
-                        }
-                    });
-                    tableHTML += '</tr>';
+                // Metrics Bar Chart
+                const metricsLabels = ['Ovr Comp.', 'Off Comp.', 'Def Comp.'];
+                const metricsDatasets = players.map((p, i) => ({
+                    label: p.Player,
+                    data: [p['Multi-Year Ovr'], p.CombinedOff, p.CombinedDef],
+                    backgroundColor: colors[i % colors.length],
+                }));
+                if(comparisonMetricsChart) comparisonMetricsChart.destroy();
+                comparisonMetricsChart = new Chart(comparisonMetricsChartCanvas, {
+                    type: 'bar',
+                    data: { labels: metricsLabels, datasets: metricsDatasets },
+                    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: false } } }
                 });
 
-                tableHTML += '</tbody></table>';
-                comparisonContent.innerHTML = tableHTML;
+                // Outlook Line Chart
+                const outlookLabels = ['Y1', 'Y2', 'Y3', 'Y4', 'Y5'];
+                const outlookDatasets = players.map((p, i) => ({
+                    label: p.Player,
+                    data: [p.Y1EPM, p.Y2EPM, p.Y3EPM, p.Y4EPM, p.Y5EPM],
+                    borderColor: colors[i % colors.length],
+                    backgroundColor: colors[i % colors.length] + '33', // semi-transparent fill
+                    fill: false,
+                    tension: 0.1
+                }));
+                 if(comparisonOutlookChart) comparisonOutlookChart.destroy();
+                comparisonOutlookChart = new Chart(comparisonOutlookChartCanvas, {
+                    type: 'line',
+                    data: { labels: outlookLabels, datasets: outlookDatasets },
+                    options: { responsive: true, maintainAspectRatio: false, scales: { y: { title: { display: true, text: 'Projected OVR' } } } }
+                });
+
+
                 comparisonModal.classList.remove('hidden');
                 setTimeout(() => comparisonModal.querySelector('.modal-content').classList.remove('scale-95', 'opacity-0'), 10);
             }
@@ -601,6 +613,12 @@
 
             // --- Event Listeners & Modals ---
             searchInput.addEventListener('input', renderAll);
+            addPlayerFromDropdown.addEventListener('click', () => {
+                if (playerSelector.value) {
+                    toggleComparePlayer(playerSelector.value);
+                    playerSelector.value = "";
+                }
+            });
             metricsTableHead.addEventListener('click', (e) => handleSort(e, 'metrics'));
             projectionsTableHead.addEventListener('click', (e) => handleSort(e, 'projections'));
             document.querySelectorAll('[data-toggle]').forEach(header => {
@@ -612,14 +630,10 @@
 
             document.body.addEventListener('click', (e) => {
                 const compareBtn = e.target.closest('.add-compare-btn');
-                const playerRow = e.target.closest('tr[data-player-id]');
                 const removeCompareBtn = e.target.closest('[data-remove-compare]');
 
                 if (compareBtn) {
                     toggleComparePlayer(compareBtn.dataset.compareId);
-                } else if (playerRow) {
-                    const player = allPlayers.find(p => p.Player === playerRow.dataset.playerId);
-                    if (player) showPlayerModal(player);
                 } else if(removeCompareBtn) {
                      toggleComparePlayer(removeCompareBtn.dataset.removeCompare);
                 }
@@ -627,8 +641,6 @@
             
             compareBtn.addEventListener('click', showComparisonModal);
             closeComparisonModal.addEventListener('click', hideComparisonModal);
-            closeModal.addEventListener('click', hidePlayerModal);
-            playerModal.addEventListener('click', (e) => e.target === playerModal && hidePlayerModal());
             
             function handleSort(e, tableType) {
                 const header = e.target.closest('th');
@@ -639,23 +651,7 @@
                 sortState.column = sortColumn;
                 renderAll();
             }
-
-            function showPlayerModal(player) {
-                modalPlayerName.textContent = player.Player;
-                modalPlayerInfo.textContent = `${player.Pos} | Age: ${player.Age} | Team: ${player.Team}`;
-                modalStats.innerHTML = `<h4 class="font-bold text-lg mt-4 mb-2">Projections</h4>
-                    ${createStatRow('1-Year OVR / PV', `${player.Y1EPM.toFixed(2)} / ${player.Y1PV}`)}
-                    ${createStatRow('3-Year PV Avg', player['Three-Year PV Avg'])}
-                    ${createStatRow('5-Year PV Avg', player['Five-Year PV Avg'])}`;
-                if (playerChartInstance) playerChartInstance.destroy();
-                playerModal.classList.remove('hidden');
-                setTimeout(() => playerModal.querySelector('.modal-content').classList.remove('scale-95', 'opacity-0'), 10);
-            }
-            function createStatRow(label, value) { return `<div class="flex justify-between border-b pb-1"><span>${label}:</span><span class="font-semibold">${value}</span></div>`;}
-            function hidePlayerModal() {
-                 playerModal.querySelector('.modal-content').classList.add('scale-95', 'opacity-0');
-                 setTimeout(() => playerModal.classList.add('hidden'), 300);
-            }
+            
             function setLoadingState(isLoading, isError = false) {
                  const colspan = 21;
                  const loadingHtml = `<tr><td colspan="${colspan}" class="text-center p-8"><div class="text-gray-500">Loading player data...</div></td></tr>`;
