@@ -18,6 +18,7 @@
         body {
             font-family: 'Inter', sans-serif;
             background-color: #f0f0f0; /* Lighter gray */
+            padding-bottom: 120px; /* Space for comparison tray */
         }
         .table-header-sortable {
             cursor: pointer;
@@ -80,6 +81,11 @@
         .section-collapsed .toggle-button svg {
             transform: rotate(-90deg);
         }
+        .add-compare-btn.selected {
+            background-color: var(--cavs-gold);
+            color: var(--cavs-navy);
+            font-weight: bold;
+        }
     </style>
 </head>
 <body class="antialiased text-gray-800">
@@ -102,7 +108,7 @@
             </div>
 
             <!-- Data Visualization Section -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            <div class="grid grid-cols-1 gap-8 mb-8">
                 <div class="bg-white p-6 rounded-2xl shadow-lg">
                     <h2 class="text-2xl font-bold mb-4 text-center" style="color: var(--cavs-navy);">Projected Y1 Team Strength</h2>
                     <div class="relative h-96 w-full">
@@ -134,6 +140,7 @@
                     <table class="min-w-full divide-y divide-gray-200 text-xs">
                         <thead id="metricsTableHead" class="bg-gray-100">
                              <tr>
+                                <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider">Add</th>
                                 <th class="px-2 py-3 text-left font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Player">Player</th>
                                 <th class="px-2 py-3 text-left font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Team">Team</th>
                                 <th class="px-2 py-3 text-left font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Age">Age</th>
@@ -175,6 +182,7 @@
                     <table class="min-w-full divide-y divide-gray-200 text-xs">
                         <thead id="projectionsTableHead" class="bg-gray-100">
                             <tr>
+                                <th class="px-2 py-3 text-center font-bold text-gray-600 uppercase tracking-wider">Add</th>
                                <th class="px-2 py-3 text-left font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Player">Player</th>
                                 <th class="px-2 py-3 text-left font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Team">Team</th>
                                 <th class="px-2 py-3 text-left font-bold text-gray-600 uppercase tracking-wider table-header-sortable" data-sort="Age">Age</th>
@@ -221,6 +229,32 @@
             </div>
         </div>
     </div>
+    
+    <!-- Player Comparison Tray -->
+    <div id="comparisonTray" class="fixed bottom-0 left-0 right-0 bg-white p-4 shadow-2xl transform translate-y-full transition-transform duration-300 z-40">
+        <div class="container mx-auto flex justify-between items-center">
+            <div>
+                <h3 class="font-bold text-lg" style="color: var(--cavs-navy);">Player Comparison</h3>
+                <div id="comparisonPlayerList" class="flex flex-wrap gap-2 mt-1"></div>
+            </div>
+            <button id="compareBtn" disabled class="bg-[var(--cavs-gold)] text-[var(--cavs-navy)] font-bold py-2 px-6 rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed">
+                Compare (0)
+            </button>
+        </div>
+    </div>
+
+    <!-- Player Comparison Modal -->
+    <div id="comparisonModal" class="modal-backdrop hidden">
+        <div class="modal-content bg-white rounded-2xl shadow-2xl overflow-hidden transform transition-all duration-300 scale-95 opacity-0 w-full max-w-7xl">
+            <div class="p-4 border-b flex justify-between items-center bg-gray-50">
+                <h3 class="text-2xl font-bold" style="color: var(--cavs-navy);">Player Comparison</h3>
+                <button id="closeComparisonModal" class="text-gray-400 hover:text-gray-800 transition text-3xl leading-none">&times;</button>
+            </div>
+            <div id="comparisonContent" class="p-6 max-h-[80vh] overflow-y-auto">
+                <!-- Comparison table will be injected here -->
+            </div>
+        </div>
+    </div>
 
 
     <script>
@@ -244,8 +278,17 @@
             const closeModal = document.getElementById('closeModal');
             const playerMetricsChartCanvas = document.getElementById('playerMetricsChart');
             
+            // --- Comparison Elements ---
+            const comparisonTray = document.getElementById('comparisonTray');
+            const comparisonPlayerList = document.getElementById('comparisonPlayerList');
+            const compareBtn = document.getElementById('compareBtn');
+            const comparisonModal = document.getElementById('comparisonModal');
+            const closeComparisonModal = document.getElementById('closeComparisonModal');
+            const comparisonContent = document.getElementById('comparisonContent');
+
             // --- State ---
             let allPlayers = [];
+            let comparisonList = [];
             let metricsSortState = { column: 'Multi-Year Ovr', direction: 'desc' };
             let projectionsSortState = { column: 'Y1EPM', direction: 'desc' };
             let teamChartInstance = null;
@@ -273,12 +316,11 @@
                             allPlayers = results.data.map(processRow).filter(p => p.Player);
                             calculateAllPercentiles(allPlayers);
                             renderAll();
-                            setLoadingState(false);
                         }
                     });
                 } catch (error) {
                     console.error("Error loading or parsing CSV data:", error);
-                    setLoadingState(false, true);
+                    setLoadingState(true, true);
                 }
             }
             
@@ -336,17 +378,21 @@
                 renderProjectionsTable(filteredPlayers);
                 renderTeamChart(allPlayers);
                 renderTeamChart5Year(allPlayers);
+                updateCompareButtons();
             }
 
             // --- Table Rendering ---
             function renderMetricsTable(players) {
                 const sorted = sortData(players, metricsSortState.column, metricsSortState.direction);
                 metricsTableBody.innerHTML = sorted.map(p => `
-                    <tr class="hover:bg-gray-50 cursor-pointer transition" data-player-id="${p.Player}">
-                        <td class="px-2 py-2 font-medium text-gray-900 whitespace-nowrap">${p.Player}</td>
-                        <td class="px-2 py-2 text-gray-500">${p.Team}</td>
-                        <td class="px-2 py-2 text-gray-500">${p.Age}</td>
-                        <td class="px-2 py-2 text-gray-500">${p.Pos}</td>
+                    <tr class="hover:bg-gray-50 transition" data-player-id="${p.Player}">
+                        <td class="px-2 py-2 text-center align-middle">
+                            <button data-compare-id="${p.Player}" class="add-compare-btn text-xl w-6 h-6 rounded-full flex items-center justify-center border-2 border-gray-300 hover:border-[var(--cavs-gold)] transition">+</button>
+                        </td>
+                        <td class="px-2 py-2 font-medium text-gray-900 whitespace-nowrap cursor-pointer">${p.Player}</td>
+                        <td class="px-2 py-2 text-gray-500 cursor-pointer">${p.Team}</td>
+                        <td class="px-2 py-2 text-gray-500 cursor-pointer">${p.Age}</td>
+                        <td class="px-2 py-2 text-gray-500 cursor-pointer">${p.Pos}</td>
                         ${renderMetricCell(p.epm, p.epm_pct)}
                         ${renderMetricCell(p['Ovr-xRAPM'], p['Ovr-xRAPM_pct'])}
                         ${renderMetricCell(p['Ovr-LEBRON'], p['Ovr-LEBRON_pct'])}
@@ -368,11 +414,14 @@
             function renderProjectionsTable(players) {
                  const sorted = sortData(players, projectionsSortState.column, projectionsSortState.direction);
                  projectionsTableBody.innerHTML = sorted.map(p => `
-                    <tr class="hover:bg-gray-50 cursor-pointer transition" data-player-id="${p.Player}">
-                        <td class="px-2 py-2 font-medium text-gray-900 whitespace-nowrap">${p.Player}</td>
-                        <td class="px-2 py-2 text-gray-500">${p.Team}</td>
-                        <td class="px-2 py-2 text-gray-500">${p.Age}</td>
-                        <td class="px-2 py-2 text-gray-500">${p.Pos}</td>
+                    <tr class="hover:bg-gray-50 transition" data-player-id="${p.Player}">
+                        <td class="px-2 py-2 text-center align-middle">
+                            <button data-compare-id="${p.Player}" class="add-compare-btn text-xl w-6 h-6 rounded-full flex items-center justify-center border-2 border-gray-300 hover:border-[var(--cavs-gold)] transition">+</button>
+                        </td>
+                        <td class="px-2 py-2 font-medium text-gray-900 whitespace-nowrap cursor-pointer">${p.Player}</td>
+                        <td class="px-2 py-2 text-gray-500 cursor-pointer">${p.Team}</td>
+                        <td class="px-2 py-2 text-gray-500 cursor-pointer">${p.Age}</td>
+                        <td class="px-2 py-2 text-gray-500 cursor-pointer">${p.Pos}</td>
                         ${renderMetricCell(p.Y1EPM, p.Y1EPM_pct)}
                         <td class="px-2 py-2 text-gray-700 font-semibold text-center whitespace-nowrap">${p.Y1PV}</td>
                         ${renderMetricCell(p.Y2EPM, p.Y2EPM_pct)}
@@ -438,15 +487,10 @@
 
                 if(teamChartInstance) teamChartInstance.destroy();
                 teamChartInstance = new Chart(teamChartCanvas, {
-                    type: 'bar',
-                    data: {
+                    type: 'bar', data: {
                         labels: teamPerformance.map(t => t.name),
-                        datasets: [{
-                            label: 'Minute-Weighted Y1 OVR', data: teamPerformance.map(t => t.value),
-                            backgroundColor: '#6F263D', borderColor: '#FDBB30', borderWidth: 1, borderRadius: 5,
-                        }]
-                    },
-                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                        datasets: [{ label: 'Minute-Weighted Y1 OVR', data: teamPerformance.map(t => t.value), backgroundColor: '#6F263D', borderColor: '#FDBB30', borderWidth: 1, borderRadius: 5, }]
+                    }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { autoSkip: false, maxRotation: 45, minRotation: 45, font: { size: 10 } } } } }
                 });
             }
             
@@ -466,40 +510,123 @@
 
                 if(teamChart5YearInstance) teamChart5YearInstance.destroy();
                 teamChart5YearInstance = new Chart(teamChart5YearCanvas, {
-                    type: 'bar',
-                    data: {
+                    type: 'bar', data: {
                         labels: teamPerformance.map(t => t.name),
-                        datasets: [{
-                            label: '5-Year Minute-Weighted OVR', data: teamPerformance.map(t => t.value),
-                            backgroundColor: '#FDBB30', borderColor: '#6F263D', borderWidth: 1, borderRadius: 5,
-                        }]
-                    },
-                     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                        datasets: [{ label: '5-Year Minute-Weighted OVR', data: teamPerformance.map(t => t.value), backgroundColor: '#FDBB30', borderColor: '#6F263D', borderWidth: 1, borderRadius: 5, }]
+                    }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { autoSkip: false, maxRotation: 45, minRotation: 45, font: { size: 10 } } } } }
+                });
+            }
+
+            // --- Player Comparison Logic ---
+            function toggleComparePlayer(playerId) {
+                const playerIndex = comparisonList.findIndex(p => p.Player === playerId);
+                if (playerIndex > -1) {
+                    comparisonList.splice(playerIndex, 1);
+                } else {
+                    const player = allPlayers.find(p => p.Player === playerId);
+                    if (player) comparisonList.push(player);
+                }
+                renderComparisonTray();
+                updateCompareButtons();
+            }
+
+            function renderComparisonTray() {
+                if (comparisonList.length > 0) {
+                    comparisonPlayerList.innerHTML = comparisonList.map(p => `
+                        <div class="flex items-center gap-2 bg-gray-100 rounded-full pr-2">
+                            <span class="pl-3 text-sm font-semibold">${p.Player}</span>
+                            <button data-remove-compare="${p.Player}" class="text-red-500 hover:text-red-700 font-bold">&times;</button>
+                        </div>
+                    `).join('');
+                    comparisonTray.classList.remove('translate-y-full');
+                } else {
+                    comparisonTray.classList.add('translate-y-full');
+                }
+                compareBtn.textContent = `Compare (${comparisonList.length})`;
+                compareBtn.disabled = comparisonList.length < 2;
+            }
+
+            function updateCompareButtons() {
+                document.querySelectorAll('.add-compare-btn').forEach(btn => {
+                    const playerId = btn.dataset.compareId;
+                    if (comparisonList.some(p => p.Player === playerId)) {
+                        btn.classList.add('selected');
+                        btn.textContent = '✓';
+                    } else {
+                        btn.classList.remove('selected');
+                        btn.textContent = '+';
+                    }
                 });
             }
             
-            // --- Event Listeners & Modal ---
+            function showComparisonModal() {
+                let tableHTML = '<table class="w-full text-xs text-left"><thead><tr><th class="p-2 border-b-2 border-gray-300 font-bold">Metric</th>';
+                comparisonList.forEach(p => {
+                    tableHTML += `<th class="p-2 border-b-2 border-gray-300 font-bold text-center">${p.Player}</th>`;
+                });
+                tableHTML += '</tr></thead><tbody>';
+
+                const metricsToShow = [
+                    { label: 'Y1 OVR', key: 'Y1EPM' }, { label: 'Y1 PV', key: 'Y1PV', isCurrency: true },
+                    { label: 'Y2 OVR', key: 'Y2EPM' }, { label: 'Y2 PV', key: 'Y2PV', isCurrency: true },
+                    { label: 'Y3 OVR', key: 'Y3EPM' }, { label: 'Y3 PV', key: 'Y3PV', isCurrency: true },
+                    { label: 'Y4 OVR', key: 'Y4EPM' }, { label: 'Y4 PV', key: 'Y4PV', isCurrency: true },
+                    { label: 'Y5 OVR', key: 'Y5EPM' }, { label: 'Y5 PV', key: 'Y5PV', isCurrency: true },
+                    { label: '3-Yr PV Avg', key: 'Three-Year PV Avg', isCurrency: true },
+                    { label: '5-Yr PV Avg', key: 'Five-Year PV Avg', isCurrency: true },
+                ];
+                
+                metricsToShow.forEach(metric => {
+                    tableHTML += `<tr class="border-t"><td class="p-2 font-semibold">${metric.label}</td>`;
+                    comparisonList.forEach(player => {
+                        if (metric.isCurrency) {
+                            tableHTML += `<td class="p-2 text-center font-semibold">${player[metric.key]}</td>`;
+                        } else {
+                             tableHTML += `<td class="p-2">${renderMetricCell(player[metric.key], player[`${metric.key}_pct`])}</td>`;
+                        }
+                    });
+                    tableHTML += '</tr>';
+                });
+
+                tableHTML += '</tbody></table>';
+                comparisonContent.innerHTML = tableHTML;
+                comparisonModal.classList.remove('hidden');
+                setTimeout(() => comparisonModal.querySelector('.modal-content').classList.remove('scale-95', 'opacity-0'), 10);
+            }
+            
+            function hideComparisonModal() {
+                comparisonModal.querySelector('.modal-content').classList.add('scale-95', 'opacity-0');
+                setTimeout(() => comparisonModal.classList.add('hidden'), 300);
+            }
+
+            // --- Event Listeners & Modals ---
             searchInput.addEventListener('input', renderAll);
             metricsTableHead.addEventListener('click', (e) => handleSort(e, 'metrics'));
             projectionsTableHead.addEventListener('click', (e) => handleSort(e, 'projections'));
-            
             document.querySelectorAll('[data-toggle]').forEach(header => {
                 header.addEventListener('click', () => {
-                    const contentId = header.dataset.toggle;
-                    const content = document.getElementById(contentId);
-                    const section = header.closest('.bg-white');
-                    content.classList.toggle('hidden');
-                    section.classList.toggle('section-collapsed');
+                    document.getElementById(header.dataset.toggle).classList.toggle('hidden');
+                    header.closest('.bg-white').classList.toggle('section-collapsed');
                 });
             });
 
             document.body.addEventListener('click', (e) => {
-                const row = e.target.closest('tr[data-player-id]');
-                if (row) {
-                    const player = allPlayers.find(p => p.Player === row.dataset.playerId);
-                    if(player) showPlayerModal(player);
+                const compareBtn = e.target.closest('.add-compare-btn');
+                const playerRow = e.target.closest('tr[data-player-id]');
+                const removeCompareBtn = e.target.closest('[data-remove-compare]');
+
+                if (compareBtn) {
+                    toggleComparePlayer(compareBtn.dataset.compareId);
+                } else if (playerRow) {
+                    const player = allPlayers.find(p => p.Player === playerRow.dataset.playerId);
+                    if (player) showPlayerModal(player);
+                } else if(removeCompareBtn) {
+                     toggleComparePlayer(removeCompareBtn.dataset.removeCompare);
                 }
             });
+            
+            compareBtn.addEventListener('click', showComparisonModal);
+            closeComparisonModal.addEventListener('click', hideComparisonModal);
             closeModal.addEventListener('click', hidePlayerModal);
             playerModal.addEventListener('click', (e) => e.target === playerModal && hidePlayerModal());
             
@@ -520,10 +647,7 @@
                     ${createStatRow('1-Year OVR / PV', `${player.Y1EPM.toFixed(2)} / ${player.Y1PV}`)}
                     ${createStatRow('3-Year PV Avg', player['Three-Year PV Avg'])}
                     ${createStatRow('5-Year PV Avg', player['Five-Year PV Avg'])}`;
-                
                 if (playerChartInstance) playerChartInstance.destroy();
-                // Placeholder for updated radar chart if needed
-                
                 playerModal.classList.remove('hidden');
                 setTimeout(() => playerModal.querySelector('.modal-content').classList.remove('scale-95', 'opacity-0'), 10);
             }
@@ -533,11 +657,16 @@
                  setTimeout(() => playerModal.classList.add('hidden'), 300);
             }
             function setLoadingState(isLoading, isError = false) {
-                 const colspan = 20;
+                 const colspan = 21;
                  const loadingHtml = `<tr><td colspan="${colspan}" class="text-center p-8"><div class="text-gray-500">Loading player data...</div></td></tr>`;
-                 const errorHtml = `<tr><td colspan="${colspan}" class="text-center p-8"><div class="text-red-500">Failed to load player data.</div></td></tr>`;
-                 metricsTableBody.innerHTML = isLoading ? loadingHtml : (isError ? errorHtml : '');
-                 projectionsTableBody.innerHTML = isLoading ? loadingHtml : (isError ? errorHtml : '');
+                 const errorHtml = `<tr><td colspan="${colspan}" class="text-center p-8"><div class="text-red-500 font-semibold">Failed to load player data. Ensure 'Composite Projections.csv' is in the same folder.</div></td></tr>`;
+                 if (isLoading) {
+                     metricsTableBody.innerHTML = loadingHtml;
+                     projectionsTableBody.innerHTML = loadingHtml;
+                 } else if (isError) {
+                     metricsTableBody.innerHTML = errorHtml;
+                     projectionsTableBody.innerHTML = errorHtml;
+                 }
             }
 
             loadData();
