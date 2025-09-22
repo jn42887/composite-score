@@ -252,6 +252,12 @@
             </div>
             <div id="comparisonContent" class="p-6 max-h-[80vh] overflow-y-auto space-y-8">
                 <div>
+                    <h4 class="text-xl font-bold text-center mb-4">Overall Metrics Percentile Comparison</h4>
+                    <div class="relative h-96">
+                        <canvas id="comparisonOverallChart"></canvas>
+                    </div>
+                </div>
+                <div>
                     <h4 class="text-xl font-bold text-center mb-4">Offensive Metrics Percentile Comparison</h4>
                     <div class="relative h-96">
                         <canvas id="comparisonOffensiveChart"></canvas>
@@ -295,6 +301,7 @@
             const compareBtn = document.getElementById('compareBtn');
             const comparisonModal = document.getElementById('comparisonModal');
             const closeComparisonModal = document.getElementById('closeComparisonModal');
+            const comparisonOverallChartCanvas = document.getElementById('comparisonOverallChart');
             const comparisonOffensiveChartCanvas = document.getElementById('comparisonOffensiveChart');
             const comparisonDefensiveChartCanvas = document.getElementById('comparisonDefensiveChart');
             const comparisonOutlookChartCanvas = document.getElementById('comparisonOutlookChart');
@@ -306,6 +313,7 @@
             let projectionsSortState = { column: 'Y1EPM', direction: 'desc' };
             let teamChartInstance = null;
             let teamChart5YearInstance = null;
+            let comparisonOverallChart = null;
             let comparisonOffensiveChart = null;
             let comparisonDefensiveChart = null;
             let comparisonOutlookChart = null;
@@ -604,6 +612,21 @@
                     maintainAspectRatio: false,
                     scales: { y: { beginAtZero: true, max: 100, title: { display: true, text: 'Percentile Rank' } } }
                 };
+
+                // Overall Metrics Bar Chart
+                const overallLabels = ['Ovr Comp.', 'Ovr-EPM', 'Ovr-xRAPM', 'Ovr-LEBRON', 'Ovr-DARKO'];
+                const overallDatasets = players.map((p, i) => ({
+                    label: p.Player,
+                    data: [p['Multi-Year Ovr_pct'], p.epm_pct, p['Ovr-xRAPM_pct'], p['Ovr-LEBRON_pct'], p['Ovr-DARKO_pct']],
+                    backgroundColor: colors[i % colors.length],
+                }));
+                if(comparisonOverallChart) comparisonOverallChart.destroy();
+                const comparisonOverallChartCanvas = document.getElementById('comparisonOverallChart');
+                if (comparisonOverallChartCanvas) { // Check if element exists before creating chart
+                    comparisonOverallChart = new Chart(comparisonOverallChartCanvas, {
+                        type: 'bar', data: { labels: overallLabels, datasets: overallDatasets }, options: commonOptions
+                    });
+                }
 
                 // Offensive Metrics Bar Chart
                 const offLabels = ['Off Comp.', 'Off-EPM', 'Off-xRAPM', 'Off-LEBRON', 'Off-DARKO'];
