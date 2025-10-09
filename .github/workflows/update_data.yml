@@ -2,9 +2,8 @@ name: Update NBA Data Daily
 
 on:
   schedule:
-    # Runs at 9 AM Central Time (14:00 UTC) every day
     - cron: '0 14 * * *'
-  workflow_dispatch:  # Allows manual triggering from GitHub UI
+  workflow_dispatch: 
 
 jobs:
   update-data:
