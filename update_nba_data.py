@@ -151,10 +151,10 @@ def fetch_lebron_data():
     return lebron
 
 def fetch_darko_data():
-    """Fetch DARKO data from CSV"""
+    """Fetch DARKO data from DPM parquet file"""
     print("Fetching DARKO data...")
-    url = "https://apanalytics.shinyapps.io/DARKO/_w_c983b2be1e6b4fd0b284e40a05be0c1d/session/53c392f3523f4ed221d998cf034a4d4e/download/download_talent?w=c983b2be1e6b4fd0b284e40a05be0c1d"
-    darko = pd.read_csv(url)
+    url = "https://www.dropbox.com/scl/fi/yxpvvv2ttm2udevahiufs/darko_career_dpm_talent.parq?rlkey=isq4ols3uhxlod2fkisbn33d7&dl=1"
+    darko = pd.read_parquet(url)
     print(f"  Loaded {len(darko)} DARKO records")
     return darko
 
@@ -388,8 +388,13 @@ def main():
         
         # DARKO
         darko_df = darko.copy()
-        darko_df['normalized_name'] = darko_df['Player'].apply(normalize_name)
-        darko_df['normalized_team'] = darko_df['Team'].apply(normalize_team)
+        # Filter for current season (2025) and get latest data per player
+        darko_df = darko_df[darko_df['season'] == 2025]
+        darko_df = darko_df.sort_values(['player_name', 'season'], ascending=[True, False])
+        darko_df = darko_df.drop_duplicates(subset='player_name', keep='first')
+        
+        darko_df['normalized_name'] = darko_df['player_name'].apply(normalize_name)
+        darko_df['normalized_team'] = darko_df['team_name'].apply(normalize_team)
         darko_df['match_key'] = darko_df['normalized_name'] + '|' + darko_df['normalized_team']
         darko_df['name_only'] = darko_df['normalized_name']
         
@@ -484,8 +489,8 @@ def main():
         cs['lebron_def'] = combined['lebron_predDLEBRON']
         cs['xrapm_off'] = combined['xrapm_Offense']
         cs['xrapm_def'] = combined['xrapm_Defense(*)']
-        cs['darko_off'] = combined['darko_O-DPM']
-        cs['darko_def'] = combined['darko_D-DPM']
+        cs['darko_off'] = combined['darko_o_dpm']
+        cs['darko_def'] = combined['darko_d_dpm']
         cs['epm_off'] = combined['epm_oepm']
         cs['epm_def'] = combined['epm_depm']
         
