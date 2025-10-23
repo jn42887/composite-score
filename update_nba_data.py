@@ -154,7 +154,37 @@ def fetch_darko_data():
     """Fetch DARKO data from DPM parquet file"""
     print("Fetching DARKO data...")
     url = "https://www.dropbox.com/scl/fi/yxpvvv2ttm2udevahiufs/darko_career_dpm_talent.parq?rlkey=isq4ols3uhxlod2fkisbn33d7&dl=1"
-    darko = pd.read_parquet(url)
+    
+    try:
+        # Try direct parquet reading first
+        darko = pd.read_parquet(url)
+    except (ImportError, Exception) as e:
+        print(f"  Direct parquet reading failed: {e}")
+        print("  Downloading file and reading locally...")
+        
+        # Download the file first
+        response = requests.get(url, timeout=60)
+        response.raise_for_status()
+        
+        # Save temporarily and read
+        temp_file = "temp_darko.parquet"
+        with open(temp_file, 'wb') as f:
+            f.write(response.content)
+        
+        try:
+            # Try reading the downloaded parquet file
+            darko = pd.read_parquet(temp_file)
+            print("  Successfully read parquet file locally")
+        except Exception as parquet_error:
+            print(f"  Local parquet reading failed: {parquet_error}")
+            print("  This suggests pyarrow/fastparquet is not installed")
+            print("  Please install pyarrow: pip install pyarrow")
+            raise ImportError("pyarrow is required for parquet support. Install with: pip install pyarrow")
+        finally:
+            # Clean up temp file
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+    
     print(f"  Loaded {len(darko)} DARKO records")
     return darko
 
