@@ -747,7 +747,9 @@ def main():
         # Add basic info - use defaults for missing data
         cs['Season'] = 2025  # Current season
         cs['Age'] = 25  # Default age - we'll try to get real ages later
-        cs['Pos'] = 'G'  # Default position
+        
+        # Use LeBRON position when available, otherwise default to 'G'
+        cs['Pos'] = combined.get('lebron_Position', 'G')
         
         # Try to get Lebron data where available
         cs['lebron_Year'] = combined.get('lebron_Year', 2025)
