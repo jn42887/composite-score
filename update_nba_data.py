@@ -365,21 +365,8 @@ def fetch_skills_data():
     return df_latest
 
 def get_current_teams_nba_com():
-    """Fetch current rosters from NBA API"""
-    print("Fetching current NBA rosters from NBA API...")
-    
-    # Determine current season
-    current_year = datetime.now().year
-    current_month = datetime.now().month
-    
-    # NBA season typically starts in October, so if we're before October, we're still in the previous season
-    if current_month < 10:
-        season_year = current_year - 1
-    else:
-        season_year = current_year
-    
-    season = f'{season_year}-{str(season_year + 1)[2:]}'
-    print(f"  Using season: {season}")
+    """Scrape current rosters from NBA.com"""
+    print("Fetching current NBA rosters from NBA.com...")
     
     player_to_team = {}
     
@@ -394,34 +381,45 @@ def get_current_teams_nba_com():
         1610612762: 'UTA', 1610612764: 'WAS',
     }
     
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-        'Accept': 'application/json',
-        'Referer': 'https://www.nba.com/',
-        'Origin': 'https://www.nba.com'
+    team_names = {
+        'ATL': 'hawks', 'BOS': 'celtics', 'BKN': 'nets', 'CHA': 'hornets',
+        'CHI': 'bulls', 'CLE': 'cavaliers', 'DAL': 'mavericks', 'DEN': 'nuggets',
+        'DET': 'pistons', 'GSW': 'warriors', 'HOU': 'rockets', 'IND': 'pacers',
+        'LAC': 'clippers', 'LAL': 'lakers', 'MEM': 'grizzlies', 'MIA': 'heat',
+        'MIL': 'bucks', 'MIN': 'timberwolves', 'NOP': 'pelicans', 'NYK': 'knicks',
+        'OKC': 'thunder', 'ORL': 'magic', 'PHI': '76ers', 'PHX': 'suns',
+        'POR': 'blazers', 'SAC': 'kings', 'SAS': 'spurs', 'TOR': 'raptors',
+        'UTA': 'jazz', 'WAS': 'wizards'
     }
     
-    for team_id, team_abbr in nba_teams.items():
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    }
+    
+    for i, (team_id, team_abbr) in enumerate(nba_teams.items()):
         try:
-            api_url = f'https://stats.nba.com/stats/commonteamroster?LeagueID=00&Season={season}&TeamID={team_id}'
-            time.sleep(random.uniform(0.5, 1.0))  # Rate limiting
+            team_name = team_names[team_abbr]
+            url = f"https://www.nba.com/team/{team_id}/{team_name}"
+            time.sleep(random.uniform(1.0, 2.0))
             
-            response = requests.get(api_url, headers=headers, timeout=10)
+            response = requests.get(url, headers=headers, timeout=10)
             if response.status_code != 200:
                 continue
             
-            data = response.json()
-            if 'resultSets' in data and len(data['resultSets']) > 0:
-                players = data['resultSets'][0]['rowSet']
-                for player in players:
-                    if len(player) > 3:
-                        first_name = player[3]
-                        last_name = player[2]
-                        full_name = f"{first_name} {last_name}"
-                        normalized = normalize_name(full_name)
-                        player_to_team[normalized] = team_abbr
-        except Exception as e:
-            print(f"  Error fetching roster for {team_abbr}: {e}")
+            soup = BeautifulSoup(response.content, 'html.parser')
+            player_links = soup.find_all('a', href=lambda x: x and '/player/' in str(x))
+            
+            seen_players = set()
+            for link in player_links:
+                player_name = link.text.strip()
+                if not player_name or len(player_name) < 3:
+                    continue
+                normalized = normalize_name(player_name)
+                if normalized not in seen_players:
+                    seen_players.add(normalized)
+                    player_to_team[normalized] = team_abbr
+        except:
             continue
     
     print(f"  Found current teams for {len(player_to_team)} players")
@@ -475,21 +473,23 @@ def main():
         xrapm = fetch_xrapm_data()
         skills = fetch_skills_data()
         
-        # 2. Use Lebron as base dataset (reliable approach)
-        print("\nUsing Lebron dataset as base...")
-        lebron_df = lebron.copy()
-        lebron_df['normalized_name'] = lebron_df['player_name'].apply(normalize_name)
-        lebron_df['normalized_team'] = lebron_df['Tm'].apply(normalize_team)
-        lebron_df['match_key'] = lebron_df['normalized_name'] + '|' + lebron_df['normalized_team']
-        lebron_df['name_only'] = lebron_df['normalized_name']
-        
-        base_df = lebron_df[['player_name', 'Tm', 'normalized_name', 'match_key', 'name_only']].copy()
-        base_df.columns = ['player_name', 'team', 'normalized_name', 'match_key', 'name_only']
-        print(f"Using Lebron dataset as base with {len(base_df)} players")
-        
-        # 3. Get current NBA rosters for team updates
-        print("\nGetting current NBA rosters for team updates...")
+        # 2. Get NBA rosters via HTML scraping as base dataset
+        print("\nGetting NBA rosters via HTML scraping as base dataset...")
         current_teams = get_current_teams_nba_com()
+        
+        # Create base dataset from scraped rosters
+        roster_data = []
+        for normalized_name, team_abbr in current_teams.items():
+            roster_data.append({
+                'player_name': normalized_name,  # We'll improve this with actual names
+                'team': team_abbr,
+                'normalized_name': normalized_name,
+                'match_key': normalized_name + '|' + team_abbr,
+                'name_only': normalized_name
+            })
+        
+        base_df = pd.DataFrame(roster_data)
+        print(f"Created base dataset with {len(base_df)} players from HTML scraping")
         
         # 3. Prepare datasets for merging
         print("\nPreparing datasets for merge...")
@@ -558,7 +558,7 @@ def main():
         lebron_df_merged = lebron_df_merged.rename(columns={'lebron_match_key': 'match_key', 'lebron_name_only': 'name_only'})
         
         # Start merge with roster base
-        print("Merging datasets with current roster as base...")
+        print("Merging datasets with roster as base...")
         combined = base_df.copy()
         
         # Match DARKO
@@ -608,53 +608,55 @@ def main():
         combined['final_player_name'] = combined['player_name']
         combined['final_team'] = combined['team']
         
-        # Update teams using current roster data
-        combined['current_team'] = combined['team']  # Start with original team
-        roster_matches = 0
+        # Filter out players with no data in any metrics source
+        print("\nFiltering players with no metrics data...")
+        initial_count = len(combined)
         
+        # Check if player has data in any of the metrics sources
+        has_data = []
         for idx, row in combined.iterrows():
-            normalized = normalize_name(row['final_player_name'])
-            original_team = normalize_team(row['final_team'])
+            has_lebron = any(col.startswith('lebron_') and pd.notna(row.get(col)) and row.get(col) != 0 
+                           for col in combined.columns if col.startswith('lebron_'))
+            has_epm = any(col.startswith('epm_') and pd.notna(row.get(col)) and row.get(col) != 0 
+                        for col in combined.columns if col.startswith('epm_'))
+            has_darko = any(col.startswith('darko_') and pd.notna(row.get(col)) and row.get(col) != 0 
+                          for col in combined.columns if col.startswith('darko_'))
+            has_xrapm = any(col.startswith('xrapm_') and pd.notna(row.get(col)) and row.get(col) != 0 
+                          for col in combined.columns if col.startswith('xrapm_'))
             
-            if normalized in current_teams:
-                combined.at[idx, 'current_team'] = current_teams[normalized]
-                roster_matches += 1
-                if current_teams[normalized] != original_team:
-                    print(f"  Updated {row['final_player_name']}: {original_team} → {current_teams[normalized]}")
-            else:
-                # Try fuzzy matching for players that didn't match exactly
-                fuzzy_match = None
-                best_score = 0
-                
-                for roster_name in current_teams.keys():
-                    score = fuzz.ratio(normalized, roster_name)
-                    if score > best_score and score >= 85:  # 85% similarity threshold
-                        best_score = score
-                        fuzzy_match = roster_name
-                
-                if fuzzy_match:
-                    combined.at[idx, 'current_team'] = current_teams[fuzzy_match]
-                    roster_matches += 1
-                    print(f"  Fuzzy matched {row['final_player_name']} → {fuzzy_match} (score: {best_score})")
-                    if current_teams[fuzzy_match] != original_team:
-                        print(f"    Updated team: {original_team} → {current_teams[fuzzy_match]}")
+            has_data.append(has_lebron or has_epm or has_darko or has_xrapm)
         
-        print(f"\nRoster assignment results:")
-        print(f"  - Players matched with current rosters: {roster_matches}")
-        print(f"  - Players using original team data: {len(combined) - roster_matches}")
+        combined['has_data'] = has_data
+        combined = combined[combined['has_data']].drop('has_data', axis=1)
         
-        # Debug: Show some roster data
-        cavs_players = combined[combined['current_team'] == 'CLE']
-        print(f"\nDebug: Found {len(cavs_players)} Cavs players in final dataset:")
-        for idx, row in cavs_players.head().iterrows():
-            print(f"  - {row['final_player_name']}")
+        filtered_count = len(combined)
+        print(f"  Filtered from {initial_count} to {filtered_count} players with metrics data")
+        print(f"  Removed {initial_count - filtered_count} players with no data")
+        
+        # Current team is already set from roster data
+        combined['current_team'] = combined['team']
         
         # 3. Create composite scores
         print("\nCreating composite scores...")
         
-        cs = combined[['lebron_Year', 'lebron_Age', 'lebron_player', 'current_team', 'lebron_Position']].copy()
-        cs.columns = ['Season', 'Age', 'Player', 'Team', 'Pos']
-        cs['MP65'] = combined['lebron_MIN']/combined['lebron_G']*65
+        cs = combined[['player_name', 'team']].copy()
+        cs.columns = ['Player', 'Team']
+        
+        # Add basic info - use defaults for missing data
+        cs['Season'] = 2025  # Current season
+        cs['Age'] = 25  # Default age - we'll try to get real ages later
+        cs['Pos'] = 'G'  # Default position
+        
+        # Try to get Lebron data where available
+        cs['lebron_Year'] = combined.get('lebron_Year', 2025)
+        cs['lebron_Age'] = combined.get('lebron_Age', 25)
+        cs['lebron_Position'] = combined.get('lebron_Position', 'G')
+        
+        # Calculate MP65 if Lebron data available
+        if 'lebron_MIN' in combined.columns and 'lebron_G' in combined.columns:
+            cs['MP65'] = combined['lebron_MIN'] / combined['lebron_G'] * 65
+        else:
+            cs['MP65'] = 30  # Default minutes
         # Handle xRAPM defense (invert if available)
         if 'xrapm_Defense(*)' in combined.columns:
             combined['xrapm_Defense(*)'] = -1*combined['xrapm_Defense(*)']
