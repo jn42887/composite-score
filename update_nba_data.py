@@ -475,7 +475,68 @@ def main():
         xrapm = fetch_xrapm_data()
         skills = fetch_skills_data()
         
-        # 2. Prepare datasets for merging
+        # 2. Get current NBA rosters as base dataset
+        print("\nGetting current NBA rosters as base dataset...")
+        current_teams = get_current_teams_nba_com()
+        
+        # Create base dataset from current rosters with actual player names
+        roster_data = []
+        nba_teams = {
+            1610612737: 'ATL', 1610612738: 'BOS', 1610612751: 'BKN', 1610612766: 'CHA',
+            1610612741: 'CHI', 1610612739: 'CLE', 1610612742: 'DAL', 1610612743: 'DEN',
+            1610612765: 'DET', 1610612744: 'GSW', 1610612745: 'HOU', 1610612754: 'IND',
+            1610612746: 'LAC', 1610612747: 'LAL', 1610612763: 'MEM', 1610612748: 'MIA',
+            1610612749: 'MIL', 1610612750: 'MIN', 1610612740: 'NOP', 1610612752: 'NYK',
+            1610612760: 'OKC', 1610612753: 'ORL', 1610612755: 'PHI', 1610612756: 'PHX',
+            1610612757: 'POR', 1610612758: 'SAC', 1610612759: 'SAS', 1610612761: 'TOR',
+            1610612762: 'UTA', 1610612764: 'WAS',
+        }
+        
+        # Determine current season
+        current_year = datetime.now().year
+        current_month = datetime.now().month
+        if current_month < 10:
+            season_year = current_year - 1
+        else:
+            season_year = current_year
+        season = f'{season_year}-{str(season_year + 1)[2:]}'
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'Accept': 'application/json',
+            'Referer': 'https://www.nba.com/',
+            'Origin': 'https://www.nba.com'
+        }
+        
+        for team_id, team_abbr in nba_teams.items():
+            try:
+                api_url = f'https://stats.nba.com/stats/commonteamroster?LeagueID=00&Season={season}&TeamID={team_id}'
+                response = requests.get(api_url, headers=headers, timeout=10)
+                if response.status_code == 200:
+                    data = response.json()
+                    if 'resultSets' in data and len(data['resultSets']) > 0:
+                        players = data['resultSets'][0]['rowSet']
+                        for player in players:
+                            if len(player) > 3:
+                                first_name = player[3]
+                                last_name = player[2]
+                                full_name = f"{first_name} {last_name}"
+                                normalized = normalize_name(full_name)
+                                roster_data.append({
+                                    'player_name': full_name,
+                                    'team': team_abbr,
+                                    'normalized_name': normalized,
+                                    'match_key': normalized + '|' + team_abbr,
+                                    'name_only': normalized
+                                })
+            except Exception as e:
+                print(f"  Error fetching roster for {team_abbr}: {e}")
+                continue
+        
+        base_df = pd.DataFrame(roster_data)
+        print(f"Created base dataset with {len(base_df)} current roster players")
+        
+        # 3. Prepare datasets for merging
         print("\nPreparing datasets for merge...")
         
         # EPM
@@ -505,7 +566,7 @@ def main():
         epm_agg = epm_agg.add_prefix('epm_')
         epm_agg = epm_agg.rename(columns={'epm_match_key': 'match_key', 'epm_name_only': 'name_only'})
         
-        # Lebron (BASE)
+        # Lebron
         lebron_df = lebron.copy()
         lebron_df['normalized_name'] = lebron_df['player_name'].apply(normalize_name)
         lebron_df['normalized_team'] = lebron_df['Tm'].apply(normalize_team)
@@ -541,9 +602,9 @@ def main():
         lebron_df_merged = lebron_df.add_prefix('lebron_')
         lebron_df_merged = lebron_df_merged.rename(columns={'lebron_match_key': 'match_key', 'lebron_name_only': 'name_only'})
         
-        # Start merge
-        print("Merging datasets...")
-        combined = lebron_df_merged.copy()
+        # Start merge with roster base
+        print("Merging datasets with current roster as base...")
+        combined = base_df.copy()
         
         # Match DARKO
         darko_match_map = {}
@@ -589,79 +650,53 @@ def main():
                         combined.at[idx, col] = val
         
         # Add final columns
-        combined['final_player_name'] = combined['lebron_player_name']
-        combined['final_team'] = combined['lebron_Tm']
+        combined['final_player_name'] = combined['player_name']
+        combined['final_team'] = combined['team']
         
-        # Get current teams
-        print("\nFetching current team rosters...")
-        current_teams = get_current_teams_nba_com()
+        # Current team is already set from roster data
+        combined['current_team'] = combined['team']
         
         # Debug: Show some roster data
-        print(f"\nDebug: Found {len(current_teams)} players in current rosters")
-        cavs_players = {k: v for k, v in current_teams.items() if v == 'CLE'}
-        print(f"Debug: Cavs players found: {len(cavs_players)}")
-        for player in list(cavs_players.keys())[:5]:  # Show first 5
-            print(f"  - {player}")
-        
-        combined['current_team'] = None
-        roster_matches = 0
-        roster_failures = []
-        
-        for idx, row in combined.iterrows():
-            normalized = normalize_name(row['final_player_name'])
-            original_team = normalize_team(row['final_team'])
-            
-            if normalized in current_teams:
-                combined.at[idx, 'current_team'] = current_teams[normalized]
-                roster_matches += 1
-                if current_teams[normalized] != original_team:
-                    print(f"  Updated {row['final_player_name']}: {original_team} → {current_teams[normalized]}")
-            else:
-                # Try fuzzy matching for players that didn't match exactly
-                fuzzy_match = None
-                best_score = 0
-                
-                for roster_name in current_teams.keys():
-                    score = fuzz.ratio(normalized, roster_name)
-                    if score > best_score and score >= 85:  # 85% similarity threshold
-                        best_score = score
-                        fuzzy_match = roster_name
-                
-                if fuzzy_match:
-                    combined.at[idx, 'current_team'] = current_teams[fuzzy_match]
-                    roster_matches += 1
-                    print(f"  Fuzzy matched {row['final_player_name']} → {fuzzy_match} (score: {best_score})")
-                    if current_teams[fuzzy_match] != original_team:
-                        print(f"    Updated team: {original_team} → {current_teams[fuzzy_match]}")
-                else:
-                    combined.at[idx, 'current_team'] = original_team
-                    if original_team == 'CLE':  # Track Cavs players that didn't match
-                        roster_failures.append(row['final_player_name'])
-        
-        print(f"\nRoster assignment results:")
-        print(f"  - Players matched with current rosters: {roster_matches}")
-        print(f"  - Players using original team data: {len(combined) - roster_matches}")
-        
-        if roster_failures:
-            print(f"\nCavs players that failed roster matching:")
-            for player in roster_failures:
-                print(f"  - {player}")
+        cavs_players = combined[combined['team'] == 'CLE']
+        print(f"\nDebug: Found {len(cavs_players)} Cavs players in base dataset:")
+        for idx, row in cavs_players.head().iterrows():
+            print(f"  - {row['player_name']}")
         
         # 3. Create composite scores
         print("\nCreating composite scores...")
         
-        cs = combined[['lebron_Year', 'lebron_Age', 'lebron_player', 'current_team', 'lebron_Position']].copy()
-        cs.columns = ['Season', 'Age', 'Player', 'Team', 'Pos']
-        cs['MP65'] = combined['lebron_MIN']/combined['lebron_G']*65
-        combined['xrapm_Defense(*)'] = -1*combined['xrapm_Defense(*)']
-        cs['lebron_off'] = combined['lebron_predOLEBRON']
-        cs['lebron_def'] = combined['lebron_predDLEBRON']
-        cs['xrapm_off'] = combined['xrapm_Offense']
-        cs['xrapm_def'] = combined['xrapm_Defense(*)']
-        cs['darko_off'] = combined['darko_o_dpm']
-        cs['darko_def'] = combined['darko_d_dpm']
-        cs['epm_off'] = combined['epm_oepm']
-        cs['epm_def'] = combined['epm_depm']
+        # Create composite scores with available data
+        cs = combined[['player_name', 'team']].copy()
+        cs.columns = ['Player', 'Team']
+        
+        # Add basic info - use defaults for missing data
+        cs['Season'] = 2025  # Current season
+        cs['Age'] = 25  # Default age - we'll try to get real ages later
+        cs['Pos'] = 'G'  # Default position
+        
+        # Try to get Lebron data where available
+        cs['lebron_Year'] = combined.get('lebron_Year', 2025)
+        cs['lebron_Age'] = combined.get('lebron_Age', 25)
+        cs['lebron_Position'] = combined.get('lebron_Position', 'G')
+        
+        # Calculate MP65 if Lebron data available
+        if 'lebron_MIN' in combined.columns and 'lebron_G' in combined.columns:
+            cs['MP65'] = combined['lebron_MIN'] / combined['lebron_G'] * 65
+        else:
+            cs['MP65'] = 30  # Default minutes
+        # Handle xRAPM defense (invert if available)
+        if 'xrapm_Defense(*)' in combined.columns:
+            combined['xrapm_Defense(*)'] = -1*combined['xrapm_Defense(*)']
+        
+        # Assign metrics with fallbacks for missing data
+        cs['lebron_off'] = combined.get('lebron_predOLEBRON', 0)
+        cs['lebron_def'] = combined.get('lebron_predDLEBRON', 0)
+        cs['xrapm_off'] = combined.get('xrapm_Offense', 0)
+        cs['xrapm_def'] = combined.get('xrapm_Defense(*)', 0)
+        cs['darko_off'] = combined.get('darko_o_dpm', 0)
+        cs['darko_def'] = combined.get('darko_d_dpm', 0)
+        cs['epm_off'] = combined.get('epm_oepm', 0)
+        cs['epm_def'] = combined.get('epm_depm', 0)
         
         # Scale metrics
         epm_off_mean = cs['epm_off'].mean()
