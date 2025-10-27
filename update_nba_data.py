@@ -26,6 +26,80 @@ BRANCH = 'main'
 # HELPER FUNCTIONS
 # ============================================================================
 
+def capitalize_name(name):
+    """Properly capitalize player names"""
+    if pd.isna(name) or name == '':
+        return name
+    
+    # Handle special cases
+    special_cases = {
+        'lebron james': 'LeBron James',
+        'michael jordan': 'Michael Jordan',
+        'kobe bryant': 'Kobe Bryant',
+        'shaquille oneal': 'Shaquille O\'Neal',
+        'dwyane wade': 'Dwyane Wade',
+        'tim duncan': 'Tim Duncan',
+        'kevin garnett': 'Kevin Garnett',
+        'paul pierce': 'Paul Pierce',
+        'ray allen': 'Ray Allen',
+        'allen iverson': 'Allen Iverson',
+        'tracy mcgrady': 'Tracy McGrady',
+        'vince carter': 'Vince Carter',
+        'grant hill': 'Grant Hill',
+        'penny hardaway': 'Penny Hardaway',
+        'chris webber': 'Chris Webber',
+        'jason kidd': 'Jason Kidd',
+        'steve nash': 'Steve Nash',
+        'dirk nowitzki': 'Dirk Nowitzki',
+        'kevin durant': 'Kevin Durant',
+        'russell westbrook': 'Russell Westbrook',
+        'james harden': 'James Harden',
+        'stephen curry': 'Stephen Curry',
+        'klay thompson': 'Klay Thompson',
+        'draymond green': 'Draymond Green',
+        'kawhi leonard': 'Kawhi Leonard',
+        'paul george': 'Paul George',
+        'jimmy butler': 'Jimmy Butler',
+        'damian lillard': 'Damian Lillard',
+        'kyrie irving': 'Kyrie Irving',
+        'anthony davis': 'Anthony Davis',
+        'joel embiid': 'Joel Embiid',
+        'giannis antetokounmpo': 'Giannis Antetokounmpo',
+        'luka doncic': 'Luka Doncic',
+        'jayson tatum': 'Jayson Tatum',
+        'donovan mitchell': 'Donovan Mitchell',
+        'darius garland': 'Darius Garland',
+        'evan mobley': 'Evan Mobley',
+        'jarrett allen': 'Jarrett Allen',
+        'max strus': 'Max Strus',
+        'dean wade': 'Dean Wade',
+        'sam merrill': 'Sam Merrill',
+        'lonzo ball': 'Lonzo Ball',
+        'thomas bryant': 'Thomas Bryant',
+        'deandre hunter': 'De\'Andre Hunter',
+        'larry nance': 'Larry Nance Jr.',
+        'craig porter': 'Craig Porter Jr.',
+        'jaylon tyson': 'Jaylon Tyson',
+        'tyrese proctor': 'Tyrese Proctor',
+        'naeqwan tomlin': 'Nae\'Qwan Tomlin',
+        'luke travers': 'Luke Travers'
+    }
+    
+    name_lower = str(name).lower().strip()
+    if name_lower in special_cases:
+        return special_cases[name_lower]
+    
+    # Default capitalization for other names
+    words = str(name).split()
+    capitalized_words = []
+    for word in words:
+        if word.lower() in ['jr', 'sr', 'ii', 'iii', 'iv']:
+            capitalized_words.append(word.upper())
+        else:
+            capitalized_words.append(word.capitalize())
+    
+    return ' '.join(capitalized_words)
+
 def normalize_name(name):
     """Normalize player names for better matching"""
     if pd.isna(name):
@@ -61,7 +135,7 @@ def normalize_name(name):
         'jeffrey': 'jeff',
         'kenneth': 'ken',
         'stephen': 'steve',
-        'thomas': 'tom',
+        'thomas': 'thomas',  # Don't convert Thomas to Tom
         'charles': 'chuck',
         'edward': 'ed',
         'ronald': 'ron',
@@ -604,8 +678,22 @@ def main():
                     if col not in ['match_key', 'name_only']:
                         combined.at[idx, col] = val
         
-        # Add final columns
-        combined['final_player_name'] = combined['player_name']
+        # Match LeBRON
+        lebron_match_map = {}
+        for idx, row in combined.iterrows():
+            match_key, score = find_match_multi_strategy(row['match_key'], row['name_only'], lebron_df_merged)
+            if match_key:
+                lebron_match_map[idx] = match_key
+        
+        lebron_dict = lebron_df_merged.set_index('match_key').to_dict('index')
+        for idx, match_key in lebron_match_map.items():
+            if match_key in lebron_dict:
+                for col, val in lebron_dict[match_key].items():
+                    if col not in ['match_key', 'name_only']:
+                        combined.at[idx, col] = val
+        
+        # Add final columns with proper capitalization
+        combined['final_player_name'] = combined['player_name'].apply(capitalize_name)
         combined['final_team'] = combined['team']
         
         # Filter out players with no data in any metrics source
@@ -639,7 +727,7 @@ def main():
         # 3. Create composite scores
         print("\nCreating composite scores...")
         
-        cs = combined[['player_name', 'team']].copy()
+        cs = combined[['final_player_name', 'team']].copy()
         cs.columns = ['Player', 'Team']
         
         # Add basic info - use defaults for missing data
