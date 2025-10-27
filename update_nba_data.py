@@ -509,9 +509,16 @@ def find_match_multi_strategy(lebron_key, lebron_name, candidate_df):
     if not exact_match.empty:
         return exact_match.iloc[0]['match_key'], 100
     
+    # Try exact name match first
     name_match = candidate_df[candidate_df['name_only'] == lebron_name]
     if not name_match.empty:
         return name_match.iloc[0]['match_key'], 95
+    
+    # Try name match with MULTI team (for players like Thomas Bryant with TOT team)
+    multi_match = candidate_df[(candidate_df['name_only'] == lebron_name) & 
+                              (candidate_df['match_key'].str.contains('|MULTI'))]
+    if not multi_match.empty:
+        return multi_match.iloc[0]['match_key'], 90
     
     candidate_keys = candidate_df['match_key'].tolist()
     if candidate_keys:
@@ -693,7 +700,14 @@ def main():
                         combined.at[idx, col] = val
         
         # Add final columns with proper capitalization
-        combined['final_player_name'] = combined['player_name'].apply(capitalize_name)
+        # Use LeBRON player name if available, otherwise use roster name
+        def get_final_name(row):
+            if pd.notna(row.get('lebron_player_name')):
+                return capitalize_name(row['lebron_player_name'])
+            else:
+                return capitalize_name(row['player_name'])
+        
+        combined['final_player_name'] = combined.apply(get_final_name, axis=1)
         combined['final_team'] = combined['team']
         
         # Filter out players with no data in any metrics source
