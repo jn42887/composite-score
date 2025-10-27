@@ -34,9 +34,103 @@ def normalize_name(name):
     name = unicodedata.normalize('NFKD', name)
     name = name.encode('ASCII', 'ignore').decode('ASCII')
     name = name.lower()
-    name = name.replace('.', '').replace('-', ' ')
-    name = re.sub(r'\s+(jr|sr|iii|iv|ii|i)\b', '', name)
-    name = ' '.join(name.split())
+    
+    # Handle common variations
+    name = name.replace('.', '').replace('-', ' ').replace("'", "")
+    name = name.replace(' jr', '').replace(' sr', '').replace(' iii', '').replace(' iv', '').replace(' ii', '').replace(' i', '')
+    
+    # Handle common nicknames and variations
+    nickname_map = {
+        'anthony': 'tony',
+        'christopher': 'chris',
+        'michael': 'mike',
+        'matthew': 'matt',
+        'joseph': 'joe',
+        'robert': 'bob',
+        'richard': 'rick',
+        'william': 'bill',
+        'james': 'jim',
+        'daniel': 'dan',
+        'benjamin': 'ben',
+        'alexander': 'alex',
+        'nicholas': 'nick',
+        'jonathan': 'jon',
+        'timothy': 'tim',
+        'patrick': 'pat',
+        'gregory': 'greg',
+        'jeffrey': 'jeff',
+        'kenneth': 'ken',
+        'stephen': 'steve',
+        'thomas': 'tom',
+        'charles': 'chuck',
+        'edward': 'ed',
+        'ronald': 'ron',
+        'lawrence': 'larry',
+        'kevin': 'kev',
+        'brian': 'bri',
+        'george': 'geo',
+        'mark': 'marc',
+        'paul': 'pau',
+        'steven': 'steve',
+        'andrew': 'andy',
+        'joshua': 'josh',
+        'kenneth': 'kenny',
+        'ryan': 'ry',
+        'jacob': 'jake',
+        'gary': 'gar',
+        'nicholas': 'nico',
+        'eric': 'erik',
+        'jonathan': 'johnny',
+        'stephen': 'steph',
+        'christopher': 'chris',
+        'matthew': 'matty',
+        'joseph': 'joey',
+        'robert': 'robby',
+        'richard': 'rich',
+        'william': 'will',
+        'james': 'jimmy',
+        'daniel': 'danny',
+        'benjamin': 'benny',
+        'alexander': 'alex',
+        'timothy': 'timmy',
+        'patrick': 'patty',
+        'gregory': 'greg',
+        'jeffrey': 'jeffy',
+        'kenneth': 'kenny',
+        'stephen': 'stevie',
+        'thomas': 'tommy',
+        'charles': 'charlie',
+        'edward': 'eddie',
+        'ronald': 'ronnie',
+        'lawrence': 'larry',
+        'kevin': 'kev',
+        'brian': 'bri',
+        'george': 'georgie',
+        'mark': 'marky',
+        'paul': 'pauly',
+        'steven': 'stevie',
+        'andrew': 'andy',
+        'joshua': 'josh',
+        'ryan': 'ry',
+        'jacob': 'jake',
+        'gary': 'gar',
+        'nicholas': 'nico',
+        'eric': 'erik',
+        'jonathan': 'johnny',
+        'stephen': 'steph'
+    }
+    
+    # Apply nickname mapping
+    words = name.split()
+    normalized_words = []
+    for word in words:
+        if word in nickname_map:
+            normalized_words.append(nickname_map[word])
+        else:
+            normalized_words.append(word)
+    
+    name = ' '.join(normalized_words)
+    name = ' '.join(name.split())  # Clean up extra spaces
     return name
 
 def normalize_team(team):
@@ -271,8 +365,21 @@ def fetch_skills_data():
     return df_latest
 
 def get_current_teams_nba_com():
-    """Scrape current rosters from NBA.com"""
-    print("Fetching current NBA rosters from NBA.com...")
+    """Fetch current rosters from NBA API"""
+    print("Fetching current NBA rosters from NBA API...")
+    
+    # Determine current season
+    current_year = datetime.now().year
+    current_month = datetime.now().month
+    
+    # NBA season typically starts in October, so if we're before October, we're still in the previous season
+    if current_month < 10:
+        season_year = current_year - 1
+    else:
+        season_year = current_year
+    
+    season = f'{season_year}-{str(season_year + 1)[2:]}'
+    print(f"  Using season: {season}")
     
     player_to_team = {}
     
@@ -287,45 +394,34 @@ def get_current_teams_nba_com():
         1610612762: 'UTA', 1610612764: 'WAS',
     }
     
-    team_names = {
-        'ATL': 'hawks', 'BOS': 'celtics', 'BKN': 'nets', 'CHA': 'hornets',
-        'CHI': 'bulls', 'CLE': 'cavaliers', 'DAL': 'mavericks', 'DEN': 'nuggets',
-        'DET': 'pistons', 'GSW': 'warriors', 'HOU': 'rockets', 'IND': 'pacers',
-        'LAC': 'clippers', 'LAL': 'lakers', 'MEM': 'grizzlies', 'MIA': 'heat',
-        'MIL': 'bucks', 'MIN': 'timberwolves', 'NOP': 'pelicans', 'NYK': 'knicks',
-        'OKC': 'thunder', 'ORL': 'magic', 'PHI': '76ers', 'PHX': 'suns',
-        'POR': 'blazers', 'SAC': 'kings', 'SAS': 'spurs', 'TOR': 'raptors',
-        'UTA': 'jazz', 'WAS': 'wizards'
-    }
-    
     headers = {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept': 'application/json',
+        'Referer': 'https://www.nba.com/',
+        'Origin': 'https://www.nba.com'
     }
     
-    for i, (team_id, team_abbr) in enumerate(nba_teams.items()):
+    for team_id, team_abbr in nba_teams.items():
         try:
-            team_name = team_names[team_abbr]
-            url = f"https://www.nba.com/team/{team_id}/{team_name}"
-            time.sleep(random.uniform(1.0, 2.0))
+            api_url = f'https://stats.nba.com/stats/commonteamroster?LeagueID=00&Season={season}&TeamID={team_id}'
+            time.sleep(random.uniform(0.5, 1.0))  # Rate limiting
             
-            response = requests.get(url, headers=headers, timeout=10)
+            response = requests.get(api_url, headers=headers, timeout=10)
             if response.status_code != 200:
                 continue
             
-            soup = BeautifulSoup(response.content, 'html.parser')
-            player_links = soup.find_all('a', href=lambda x: x and '/player/' in str(x))
-            
-            seen_players = set()
-            for link in player_links:
-                player_name = link.text.strip()
-                if not player_name or len(player_name) < 3:
-                    continue
-                normalized = normalize_name(player_name)
-                if normalized not in seen_players:
-                    seen_players.add(normalized)
-                    player_to_team[normalized] = team_abbr
-        except:
+            data = response.json()
+            if 'resultSets' in data and len(data['resultSets']) > 0:
+                players = data['resultSets'][0]['rowSet']
+                for player in players:
+                    if len(player) > 3:
+                        first_name = player[3]
+                        last_name = player[2]
+                        full_name = f"{first_name} {last_name}"
+                        normalized = normalize_name(full_name)
+                        player_to_team[normalized] = team_abbr
+        except Exception as e:
+            print(f"  Error fetching roster for {team_abbr}: {e}")
             continue
     
     print(f"  Found current teams for {len(player_to_team)} players")
@@ -500,13 +596,56 @@ def main():
         print("\nFetching current team rosters...")
         current_teams = get_current_teams_nba_com()
         
+        # Debug: Show some roster data
+        print(f"\nDebug: Found {len(current_teams)} players in current rosters")
+        cavs_players = {k: v for k, v in current_teams.items() if v == 'CLE'}
+        print(f"Debug: Cavs players found: {len(cavs_players)}")
+        for player in list(cavs_players.keys())[:5]:  # Show first 5
+            print(f"  - {player}")
+        
         combined['current_team'] = None
+        roster_matches = 0
+        roster_failures = []
+        
         for idx, row in combined.iterrows():
             normalized = normalize_name(row['final_player_name'])
+            original_team = normalize_team(row['final_team'])
+            
             if normalized in current_teams:
                 combined.at[idx, 'current_team'] = current_teams[normalized]
+                roster_matches += 1
+                if current_teams[normalized] != original_team:
+                    print(f"  Updated {row['final_player_name']}: {original_team} → {current_teams[normalized]}")
             else:
-                combined.at[idx, 'current_team'] = normalize_team(row['final_team'])
+                # Try fuzzy matching for players that didn't match exactly
+                fuzzy_match = None
+                best_score = 0
+                
+                for roster_name in current_teams.keys():
+                    score = fuzz.ratio(normalized, roster_name)
+                    if score > best_score and score >= 85:  # 85% similarity threshold
+                        best_score = score
+                        fuzzy_match = roster_name
+                
+                if fuzzy_match:
+                    combined.at[idx, 'current_team'] = current_teams[fuzzy_match]
+                    roster_matches += 1
+                    print(f"  Fuzzy matched {row['final_player_name']} → {fuzzy_match} (score: {best_score})")
+                    if current_teams[fuzzy_match] != original_team:
+                        print(f"    Updated team: {original_team} → {current_teams[fuzzy_match]}")
+                else:
+                    combined.at[idx, 'current_team'] = original_team
+                    if original_team == 'CLE':  # Track Cavs players that didn't match
+                        roster_failures.append(row['final_player_name'])
+        
+        print(f"\nRoster assignment results:")
+        print(f"  - Players matched with current rosters: {roster_matches}")
+        print(f"  - Players using original team data: {len(combined) - roster_matches}")
+        
+        if roster_failures:
+            print(f"\nCavs players that failed roster matching:")
+            for player in roster_failures:
+                print(f"  - {player}")
         
         # 3. Create composite scores
         print("\nCreating composite scores...")
