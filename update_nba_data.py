@@ -229,7 +229,7 @@ def push_to_github(df, file_path, commit_message=None):
     if commit_message is None:
         commit_message = f"Auto-update {file_path} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
     
-    csv_content = df.to_csv(index=False)
+    csv_content = df.to_csv(index=False, na_rep='')
     content_encoded = base64.b64encode(csv_content.encode()).decode()
     
     api_url = f'https://api.github.com/repos/{GITHUB_USERNAME}/{REPO_NAME}/contents/{file_path}'
@@ -899,21 +899,53 @@ def main():
         if 'xrapm_Defense(*)' in combined.columns:
             combined['xrapm_Defense(*)'] = -1*combined['xrapm_Defense(*)']
         
-        # Assign metrics with fallbacks for missing data
-        cs['lebron_off'] = combined['lebron_predOLEBRON'].fillna(0) if 'lebron_predOLEBRON' in combined.columns else 0
-        cs['lebron_def'] = combined['lebron_predDLEBRON'].fillna(0) if 'lebron_predDLEBRON' in combined.columns else 0
-        cs['xrapm_off'] = combined['xrapm_Offense'].fillna(0) if 'xrapm_Offense' in combined.columns else 0
-        cs['xrapm_def'] = combined['xrapm_Defense(*)'].fillna(0) if 'xrapm_Defense(*)' in combined.columns else 0
-        cs['darko_off'] = combined['darko_o_dpm'].fillna(0) if 'darko_o_dpm' in combined.columns else 0
-        cs['darko_def'] = combined['darko_d_dpm'].fillna(0) if 'darko_d_dpm' in combined.columns else 0
-        cs['epm_off'] = combined['epm_oepm'].fillna(0) if 'epm_oepm' in combined.columns else 0
-        cs['epm_def'] = combined['epm_depm'].fillna(0) if 'epm_depm' in combined.columns else 0
+        # Assign metrics - keep NaN for missing data (don't fill with 0, as 0 is an actual value)
+        if 'lebron_predOLEBRON' in combined.columns:
+            cs['lebron_off'] = combined['lebron_predOLEBRON']
+        else:
+            cs['lebron_off'] = None
+            
+        if 'lebron_predDLEBRON' in combined.columns:
+            cs['lebron_def'] = combined['lebron_predDLEBRON']
+        else:
+            cs['lebron_def'] = None
+            
+        if 'xrapm_Offense' in combined.columns:
+            cs['xrapm_off'] = combined['xrapm_Offense']
+        else:
+            cs['xrapm_off'] = None
+            
+        if 'xrapm_Defense(*)' in combined.columns:
+            cs['xrapm_def'] = combined['xrapm_Defense(*)']
+        else:
+            cs['xrapm_def'] = None
+            
+        if 'darko_o_dpm' in combined.columns:
+            cs['darko_off'] = combined['darko_o_dpm']
+        else:
+            cs['darko_off'] = None
+            
+        if 'darko_d_dpm' in combined.columns:
+            cs['darko_def'] = combined['darko_d_dpm']
+        else:
+            cs['darko_def'] = None
+            
+        if 'epm_oepm' in combined.columns:
+            cs['epm_off'] = combined['epm_oepm']
+        else:
+            cs['epm_off'] = None
+            
+        if 'epm_depm' in combined.columns:
+            cs['epm_def'] = combined['epm_depm']
+        else:
+            cs['epm_def'] = None
         
-        # Scale metrics
-        epm_off_mean = cs['epm_off'].mean()
-        epm_off_std = cs['epm_off'].std()
-        epm_def_mean = cs['epm_def'].mean()
-        epm_def_std = cs['epm_def'].std()
+        # Scale metrics - use only non-NaN values for mean/std calculations
+        # These will be NaN if no EPM data exists
+        epm_off_mean = cs['epm_off'].mean(skipna=True)
+        epm_off_std = cs['epm_off'].std(skipna=True) if pd.notna(epm_off_mean) else 0
+        epm_def_mean = cs['epm_def'].mean(skipna=True)
+        epm_def_std = cs['epm_def'].std(skipna=True) if pd.notna(epm_def_mean) else 0
         
         cs['lebron_off_scaled'] = scale_to_target(cs['lebron_off'], epm_off_mean, epm_off_std)
         cs['xrapm_off_scaled'] = scale_to_target(cs['xrapm_off'], epm_off_mean, epm_off_std)
@@ -925,8 +957,11 @@ def main():
         cs['darko_def_scaled'] = scale_to_target(cs['darko_def'], epm_def_mean, epm_def_std)
         cs['epm_def_scaled'] = cs['epm_def']
         
+        # Calculate combined metrics - only average available (non-NaN) metrics
+        # This will return NaN if all metrics are missing
         cs['combined_off'] = cs[['lebron_off_scaled', 'xrapm_off_scaled', 'darko_off_scaled', 'epm_off_scaled']].mean(axis=1, skipna=True)
         cs['combined_def'] = cs[['lebron_def_scaled', 'xrapm_def_scaled', 'darko_def_scaled', 'epm_def_scaled']].mean(axis=1, skipna=True)
+        # combined_tot will be NaN if either combined_off or combined_def is NaN
         cs['combined_tot'] = cs['combined_off'] + cs['combined_def']
         
         # Calculate projections
