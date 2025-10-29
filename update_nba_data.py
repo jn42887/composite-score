@@ -560,7 +560,14 @@ def main():
         
         # Create base dataset from scraped rosters
         roster_data = []
+        seen_base_players = set()  # Track players we've already added
         for normalized_name, team_abbr in current_teams.items():
+            # Skip if we've already added this player
+            if normalized_name in seen_base_players:
+                print(f"  WARNING: Skipping duplicate player in roster: {normalized_name}")
+                continue
+            seen_base_players.add(normalized_name)
+            
             roster_data.append({
                 'player_name': normalized_name,  # We'll improve this with actual names
                 'team': team_abbr,
@@ -570,7 +577,15 @@ def main():
             })
         
         base_df = pd.DataFrame(roster_data)
-        print(f"Created base dataset with {len(base_df)} players from HTML scraping")
+        
+        # Deduplicate base_df - ensure each player appears only once
+        # If same player appears multiple times, keep the first occurrence
+        initial_base_count = len(base_df)
+        base_df = base_df.drop_duplicates(subset=['normalized_name'], keep='first')
+        if len(base_df) < initial_base_count:
+            print(f"  Removed {initial_base_count - len(base_df)} duplicate entries from roster base")
+        
+        print(f"Created base dataset with {len(base_df)} unique players from HTML scraping")
         
         # 3. Prepare datasets for merging
         print("\nPreparing datasets for merge...")
@@ -582,7 +597,18 @@ def main():
         epm_df['match_key'] = epm_df['normalized_name'] + '|' + epm_df['normalized_team']
         epm_df['name_only'] = epm_df['normalized_name']
         
-        # Aggregate EPM
+        # Deduplicate EPM by name_only first - prefer MULTI (aggregate stats) over individual team entries
+        # This prevents averaging incorrect values from different team entries
+        epm_df = epm_df.sort_values(['name_only', 'normalized_team'], ascending=[True, True])
+        epm_df['team_priority'] = epm_df['normalized_team'].apply(lambda x: 1 if x == 'MULTI' else 0)
+        epm_df = epm_df.sort_values(['name_only', 'team_priority'], ascending=[True, False])
+        epm_df = epm_df.drop_duplicates(subset=['name_only'], keep='first')
+        epm_df = epm_df.drop('team_priority', axis=1)
+        
+        # Now recalculate match_key after deduplication
+        epm_df['match_key'] = epm_df['normalized_name'] + '|' + epm_df['normalized_team']
+        
+        # Aggregate EPM - should only be needed if same player+team combo appears multiple times
         epm_numeric_cols = epm_df.select_dtypes(include=[np.number]).columns.tolist()
         epm_non_numeric_cols = epm_df.select_dtypes(exclude=[np.number]).columns.tolist()
         
@@ -602,12 +628,31 @@ def main():
         epm_agg = epm_agg.add_prefix('epm_')
         epm_agg = epm_agg.rename(columns={'epm_match_key': 'match_key', 'epm_name_only': 'name_only'})
         
+        print(f"  Deduplicated EPM data: {len(epm)} -> {len(epm_df)} -> {len(epm_agg)} unique entries")
+        
         # Lebron
         lebron_df = lebron.copy()
+        # Deduplicate LEBRON data - if same player appears multiple times, keep the one with most recent/complete data
         lebron_df['normalized_name'] = lebron_df['player_name'].apply(normalize_name)
         lebron_df['normalized_team'] = lebron_df['Tm'].apply(normalize_team)
         lebron_df['match_key'] = lebron_df['normalized_name'] + '|' + lebron_df['normalized_team']
         lebron_df['name_only'] = lebron_df['normalized_name']
+        
+        # Sort by name and team, then drop duplicates - this ensures we keep one entry per player+team combo
+        # If same player appears with same team, keep first (could add additional sorting by Year/other fields if needed)
+        lebron_df = lebron_df.sort_values(['normalized_name', 'normalized_team', 'Year'], ascending=[True, True, False])
+        lebron_df = lebron_df.drop_duplicates(subset=['match_key'], keep='first')
+        
+        # Also deduplicate by name_only - if same player name appears multiple times (different teams), keep the one with MULTI team
+        # MULTI/TOT entries are aggregate stats across teams, which are more accurate
+        lebron_df = lebron_df.sort_values(['name_only', 'normalized_team'], ascending=[True, True])
+        # Prefer MULTI teams (they represent aggregate stats)
+        lebron_df['team_priority'] = lebron_df['normalized_team'].apply(lambda x: 1 if x == 'MULTI' else 0)
+        lebron_df = lebron_df.sort_values(['name_only', 'team_priority'], ascending=[True, False])
+        lebron_df = lebron_df.drop_duplicates(subset=['name_only'], keep='first')
+        lebron_df = lebron_df.drop('team_priority', axis=1)
+        
+        print(f"  Deduplicated LEBRON data: {len(lebron)} -> {len(lebron_df)} unique players")
         
         # DARKO
         darko_df = darko.copy()
@@ -628,6 +673,20 @@ def main():
         xrapm_df['match_key'] = xrapm_df['normalized_name'] + '|' + xrapm_df['normalized_team']
         xrapm_df['name_only'] = xrapm_df['normalized_name']
         
+        # Deduplicate xRAPM - ensure each player+team combo appears only once
+        initial_xrapm_count = len(xrapm_df)
+        xrapm_df = xrapm_df.sort_values(['normalized_name', 'normalized_team'])
+        xrapm_df = xrapm_df.drop_duplicates(subset=['match_key'], keep='first')
+        
+        # Also deduplicate by name_only - prefer MULTI teams (aggregate stats)
+        xrapm_df['team_priority'] = xrapm_df['normalized_team'].apply(lambda x: 1 if x == 'MULTI' else 0)
+        xrapm_df = xrapm_df.sort_values(['name_only', 'team_priority'], ascending=[True, False])
+        xrapm_df = xrapm_df.drop_duplicates(subset=['name_only'], keep='first')
+        xrapm_df = xrapm_df.drop('team_priority', axis=1)
+        
+        if len(xrapm_df) < initial_xrapm_count:
+            print(f"  Deduplicated xRAPM data: {initial_xrapm_count} -> {len(xrapm_df)} unique players")
+        
         # Add prefixes
         darko_df_merged = darko_df.add_prefix('darko_')
         darko_df_merged = darko_df_merged.rename(columns={'darko_match_key': 'match_key', 'darko_name_only': 'name_only'})
@@ -644,23 +703,38 @@ def main():
         
         # Match DARKO
         darko_match_map = {}
+        matched_darko_keys = set()
         for idx, row in combined.iterrows():
             match_key, score = find_match_multi_strategy(row['match_key'], row['name_only'], darko_df_merged)
             if match_key:
+                if match_key in matched_darko_keys:
+                    print(f"  WARNING: DARKO entry {match_key} already matched, skipping duplicate for {row['normalized_name']}")
+                    continue
+                matched_darko_keys.add(match_key)
                 darko_match_map[idx] = match_key
         
         # Match xRAPM
         xrapm_match_map = {}
+        matched_xrapm_keys = set()
         for idx, row in combined.iterrows():
             match_key, score = find_match_multi_strategy(row['match_key'], row['name_only'], xrapm_df_merged)
             if match_key:
+                if match_key in matched_xrapm_keys:
+                    print(f"  WARNING: xRAPM entry {match_key} already matched, skipping duplicate for {row['normalized_name']}")
+                    continue
+                matched_xrapm_keys.add(match_key)
                 xrapm_match_map[idx] = match_key
         
         # Match EPM
         epm_match_map = {}
+        matched_epm_keys = set()
         for idx, row in combined.iterrows():
             match_key, score = find_match_multi_strategy(row['match_key'], row['name_only'], epm_agg)
             if match_key:
+                if match_key in matched_epm_keys:
+                    print(f"  WARNING: EPM entry {match_key} already matched, skipping duplicate for {row['normalized_name']}")
+                    continue
+                matched_epm_keys.add(match_key)
                 epm_match_map[idx] = match_key
         
         # Merge data
@@ -687,9 +761,16 @@ def main():
         
         # Match LeBRON
         lebron_match_map = {}
+        # Track which LEBRON entries have been matched to prevent duplicates
+        matched_lebron_keys = set()
         for idx, row in combined.iterrows():
             match_key, score = find_match_multi_strategy(row['match_key'], row['name_only'], lebron_df_merged)
             if match_key:
+                # Check if this LEBRON entry was already matched to another roster entry
+                if match_key in matched_lebron_keys:
+                    print(f"  WARNING: LEBRON entry {match_key} already matched, skipping duplicate match for roster entry {row['normalized_name']}")
+                    continue
+                matched_lebron_keys.add(match_key)
                 lebron_match_map[idx] = match_key
         
         lebron_dict = lebron_df_merged.set_index('match_key').to_dict('index')
@@ -709,6 +790,40 @@ def main():
         
         combined['final_player_name'] = combined.apply(get_final_name, axis=1)
         combined['final_team'] = combined['team']
+        
+        # Remove duplicates BEFORE filtering - if same player appears multiple times, keep the one with most data
+        print("\nRemoving duplicate player entries from combined data...")
+        initial_count = len(combined)
+        
+        # Count how many data sources each player has
+        def count_data_sources(row):
+            count = 0
+            if any(col.startswith('lebron_') and pd.notna(row.get(col)) and row.get(col) != 0 
+                   for col in combined.columns if col.startswith('lebron_')):
+                count += 1
+            if any(col.startswith('epm_') and pd.notna(row.get(col)) and row.get(col) != 0 
+                   for col in combined.columns if col.startswith('epm_')):
+                count += 1
+            if any(col.startswith('darko_') and pd.notna(row.get(col)) and row.get(col) != 0 
+                   for col in combined.columns if col.startswith('darko_')):
+                count += 1
+            if any(col.startswith('xrapm_') and pd.notna(row.get(col)) and row.get(col) != 0 
+                   for col in combined.columns if col.startswith('xrapm_')):
+                count += 1
+            return count
+        
+        combined['data_source_count'] = combined.apply(count_data_sources, axis=1)
+        
+        # Sort by data source count (descending) so we keep the entry with most data
+        combined = combined.sort_values('data_source_count', ascending=False)
+        
+        # Drop duplicates, keeping the first (which has most data sources)
+        combined = combined.drop_duplicates(subset=['final_player_name'], keep='first')
+        combined = combined.drop('data_source_count', axis=1)
+        
+        duplicate_count = initial_count - len(combined)
+        if duplicate_count > 0:
+            print(f"  Removed {duplicate_count} duplicate player entries before filtering")
         
         # Filter out players with no data in any metrics source
         print("\nFiltering players with no metrics data...")
@@ -746,19 +861,38 @@ def main():
         
         # Add basic info - use defaults for missing data
         cs['Season'] = 2025  # Current season
-        cs['Age'] = 25  # Default age - we'll try to get real ages later
+        
+        # Use LeBRON age when available, don't default to 25 if missing
+        if 'lebron_Age' in combined.columns:
+            cs['Age'] = combined['lebron_Age']  # Keep NaN if missing
+        else:
+            cs['Age'] = None  # Explicitly None if column doesn't exist
         
         # Use LeBRON position when available, otherwise default to 'G'
-        cs['Pos'] = combined.get('lebron_Position', 'G')
+        if 'lebron_Position' in combined.columns:
+            cs['Pos'] = combined['lebron_Position'].fillna('G')
+        else:
+            cs['Pos'] = 'G'
         
         # Try to get Lebron data where available
-        cs['lebron_Year'] = combined.get('lebron_Year', 2025)
-        cs['lebron_Age'] = combined.get('lebron_Age', 25)
-        cs['lebron_Position'] = combined.get('lebron_Position', 'G')
+        if 'lebron_Year' in combined.columns:
+            cs['lebron_Year'] = combined['lebron_Year'].fillna(2025)
+        else:
+            cs['lebron_Year'] = 2025
+            
+        if 'lebron_Age' in combined.columns:
+            cs['lebron_Age'] = combined['lebron_Age']  # Keep NaN if missing
+        else:
+            cs['lebron_Age'] = None
+            
+        if 'lebron_Position' in combined.columns:
+            cs['lebron_Position'] = combined['lebron_Position'].fillna('G')
+        else:
+            cs['lebron_Position'] = 'G'
         
         # Calculate MP65 if Lebron data available
         if 'lebron_MIN' in combined.columns and 'lebron_G' in combined.columns:
-            cs['MP65'] = combined['lebron_MIN'] / combined['lebron_G'] * 65
+            cs['MP65'] = (combined['lebron_MIN'] / combined['lebron_G'] * 65).fillna(30)
         else:
             cs['MP65'] = 30  # Default minutes
         # Handle xRAPM defense (invert if available)
@@ -766,14 +900,14 @@ def main():
             combined['xrapm_Defense(*)'] = -1*combined['xrapm_Defense(*)']
         
         # Assign metrics with fallbacks for missing data
-        cs['lebron_off'] = combined.get('lebron_predOLEBRON', 0)
-        cs['lebron_def'] = combined.get('lebron_predDLEBRON', 0)
-        cs['xrapm_off'] = combined.get('xrapm_Offense', 0)
-        cs['xrapm_def'] = combined.get('xrapm_Defense(*)', 0)
-        cs['darko_off'] = combined.get('darko_o_dpm', 0)
-        cs['darko_def'] = combined.get('darko_d_dpm', 0)
-        cs['epm_off'] = combined.get('epm_oepm', 0)
-        cs['epm_def'] = combined.get('epm_depm', 0)
+        cs['lebron_off'] = combined['lebron_predOLEBRON'].fillna(0) if 'lebron_predOLEBRON' in combined.columns else 0
+        cs['lebron_def'] = combined['lebron_predDLEBRON'].fillna(0) if 'lebron_predDLEBRON' in combined.columns else 0
+        cs['xrapm_off'] = combined['xrapm_Offense'].fillna(0) if 'xrapm_Offense' in combined.columns else 0
+        cs['xrapm_def'] = combined['xrapm_Defense(*)'].fillna(0) if 'xrapm_Defense(*)' in combined.columns else 0
+        cs['darko_off'] = combined['darko_o_dpm'].fillna(0) if 'darko_o_dpm' in combined.columns else 0
+        cs['darko_def'] = combined['darko_d_dpm'].fillna(0) if 'darko_d_dpm' in combined.columns else 0
+        cs['epm_off'] = combined['epm_oepm'].fillna(0) if 'epm_oepm' in combined.columns else 0
+        cs['epm_def'] = combined['epm_depm'].fillna(0) if 'epm_depm' in combined.columns else 0
         
         # Scale metrics
         epm_off_mean = cs['epm_off'].mean()
@@ -799,35 +933,43 @@ def main():
         cs['Multi-Year WAR'] = (0.1141*cs['combined_tot']*cs['combined_tot']+1.3037*cs['combined_tot']+2.8285)*1.05
         cs['Multi-Year PV'] = cs['Multi-Year WAR'] * 6000000
         
-        cs['Y1_off'] = cs['combined_off']+1.8531-0.0675*(cs['Age']+1)
-        cs['Y1_def'] = cs['combined_def']+0.7272-0.0261*(cs['Age']+1)
+        cs['Y1_off'] = cs['combined_off']+1.8531-0.0675*(cs['Age'].fillna(0)+1)
+        cs['Y1_def'] = cs['combined_def']+0.7272-0.0261*(cs['Age'].fillna(0)+1)
         cs['Y1_tot'] = cs['Y1_off'] + cs['Y1_def']
         cs['Y1_war'] = (0.1141*cs['Y1_tot']*cs['Y1_tot']+1.3037*cs['Y1_tot']+2.8285)*1.05
         cs['Y1_PV'] = cs['Y1_war']*6000000*1.07
         
-        cs['Y2_off'] = cs['Y1_off']+1.8531-0.0675*(cs['Age']+2)
-        cs['Y2_def'] = cs['Y1_def']+0.7272-0.0261*(cs['Age']+2)
+        cs['Y2_off'] = cs['Y1_off']+1.8531-0.0675*(cs['Age'].fillna(0)+2)
+        cs['Y2_def'] = cs['Y1_def']+0.7272-0.0261*(cs['Age'].fillna(0)+2)
         cs['Y2_tot'] = cs['Y2_off'] + cs['Y2_def']
         cs['Y2_war'] = (0.1141*cs['Y2_tot']*cs['Y2_tot']+1.3037*cs['Y2_tot']+2.8285)*1.05
         cs['Y2_PV'] = cs['Y2_war']*6000000*1.07*1.1
         
-        cs['Y3_off'] = cs['Y2_off']+1.8531-0.0675*(cs['Age']+3)
-        cs['Y3_def'] = cs['Y2_def']+0.7272-0.0261*(cs['Age']+3)
+        cs['Y3_off'] = cs['Y2_off']+1.8531-0.0675*(cs['Age'].fillna(0)+3)
+        cs['Y3_def'] = cs['Y2_def']+0.7272-0.0261*(cs['Age'].fillna(0)+3)
         cs['Y3_tot'] = cs['Y3_off'] + cs['Y3_def']
         cs['Y3_war'] = (0.1141*cs['Y3_tot']*cs['Y3_tot']+1.3037*cs['Y3_tot']+2.8285)*1.05
         cs['Y3_PV'] = cs['Y3_war']*6000000*1.07*1.1*1.1
         
-        cs['Y4_off'] = cs['Y3_off']+1.8531-0.0675*(cs['Age']+4)
-        cs['Y4_def'] = cs['Y3_def']+0.7272-0.0261*(cs['Age']+4)
+        cs['Y4_off'] = cs['Y3_off']+1.8531-0.0675*(cs['Age'].fillna(0)+4)
+        cs['Y4_def'] = cs['Y3_def']+0.7272-0.0261*(cs['Age'].fillna(0)+4)
         cs['Y4_tot'] = cs['Y4_off'] + cs['Y4_def']
         cs['Y4_war'] = (0.1141*cs['Y4_tot']*cs['Y4_tot']+1.3037*cs['Y4_tot']+2.8285)*1.05
         cs['Y4_PV'] = cs['Y4_war']*6000000*1.07*1.1*1.1*1.1
         
-        cs['Y5_off'] = cs['Y4_off']+1.8531-0.0675*(cs['Age']+5)
-        cs['Y5_def'] = cs['Y4_def']+0.7272-0.0261*(cs['Age']+5)
+        cs['Y5_off'] = cs['Y4_off']+1.8531-0.0675*(cs['Age'].fillna(0)+5)
+        cs['Y5_def'] = cs['Y4_def']+0.7272-0.0261*(cs['Age'].fillna(0)+5)
         cs['Y5_tot'] = cs['Y5_off'] + cs['Y5_def']
         cs['Y5_war'] = (0.1141*cs['Y5_tot']*cs['Y5_tot']+1.3037*cs['Y5_tot']+2.8285)*1.05
         cs['Y5_PV'] = cs['Y5_war']*6000000*1.07*1.1*1.1*1.1*1.1
+        
+        # Remove duplicate players - keep first occurrence (typically the one with more complete data)
+        print("\nRemoving duplicate players...")
+        initial_count = len(cs)
+        cs = cs.drop_duplicates(subset=['Player'], keep='first')
+        duplicate_count = initial_count - len(cs)
+        if duplicate_count > 0:
+            print(f"  Removed {duplicate_count} duplicate player entries")
         
         # 4. Push to GitHub
         print("\nPushing to GitHub...")
