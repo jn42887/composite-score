@@ -359,14 +359,29 @@ def fetch_darko_data():
 
     # Normalize expected columns
     rename_map = {}
-    if 'O-DPM' in darko.columns:
+    cols = set(darko.columns)
+    # DPM columns
+    if 'O-DPM' in cols:
         rename_map['O-DPM'] = 'o_dpm'
-    if 'D-DPM' in darko.columns:
+    if 'D-DPM' in cols:
         rename_map['D-DPM'] = 'd_dpm'
-    if 'ODPM' in darko.columns:
+    if 'ODPM' in cols:
         rename_map['ODPM'] = 'o_dpm'
-    if 'DDPM' in darko.columns:
+    if 'DDPM' in cols:
         rename_map['DDPM'] = 'd_dpm'
+    # Talent columns (multiple possible variants)
+    if 'O-TALENT' in cols:
+        rename_map['O-TALENT'] = 'o_talent'
+    if 'D-TALENT' in cols:
+        rename_map['D-TALENT'] = 'd_talent'
+    if 'o_dpm_talent' in cols:
+        rename_map['o_dpm_talent'] = 'o_talent'
+    if 'd_dpm_talent' in cols:
+        rename_map['d_dpm_talent'] = 'd_talent'
+    if 'ODPM_TALENT' in cols:
+        rename_map['ODPM_TALENT'] = 'o_talent'
+    if 'DDPM_TALENT' in cols:
+        rename_map['DDPM_TALENT'] = 'd_talent'
     if rename_map:
         darko = darko.rename(columns=rename_map)
 
@@ -985,22 +1000,29 @@ def main():
         else:
             cs['xrapm_def'] = None
             
-        # Check for DARKO columns - try both underscore and hyphen versions
-        # Source parquet uses 'O-DPM' and 'D-DPM'. After prefixing with 'darko_',
-        # those become 'darko_O-DPM' and 'darko_D-DPM'. Fall back to older names.
-        if 'darko_O-DPM' in combined.columns:
-            cs['darko_off'] = combined['darko_O-DPM']
+        # Check for DARKO columns - prefer TALENT (long-term ability), fallback to DPM
+        # After adding prefix 'darko_', talent columns become 'darko_o_talent'/'darko_d_talent'.
+        if 'darko_o_talent' in combined.columns:
+            cs['darko_off'] = combined['darko_o_talent']
+        elif 'darko_O-TALENT' in combined.columns:
+            cs['darko_off'] = combined['darko_O-TALENT']
         elif 'darko_o_dpm' in combined.columns:
             cs['darko_off'] = combined['darko_o_dpm']
+        elif 'darko_O-DPM' in combined.columns:
+            cs['darko_off'] = combined['darko_O-DPM']
         elif 'darko_o-dpm' in combined.columns:
             cs['darko_off'] = combined['darko_o-dpm']
         else:
             cs['darko_off'] = None
             
-        if 'darko_D-DPM' in combined.columns:
-            cs['darko_def'] = combined['darko_D-DPM']
+        if 'darko_d_talent' in combined.columns:
+            cs['darko_def'] = combined['darko_d_talent']
+        elif 'darko_D-TALENT' in combined.columns:
+            cs['darko_def'] = combined['darko_D-TALENT']
         elif 'darko_d_dpm' in combined.columns:
             cs['darko_def'] = combined['darko_d_dpm']
+        elif 'darko_D-DPM' in combined.columns:
+            cs['darko_def'] = combined['darko_D-DPM']
         elif 'darko_d-dpm' in combined.columns:
             cs['darko_def'] = combined['darko_d-dpm']
         else:
