@@ -319,72 +319,40 @@ def fetch_lebron_data():
     return lebron
 
 def fetch_darko_data():
-    """Fetch DARKO data from the remote parquet URL only, then normalize columns.
-
-    Expected offensive/defensive columns in the source parquet may be either:
-      - 'O-DPM' and 'D-DPM' (hyphenated, uppercase), or
-      - 'o_dpm' and 'd_dpm' (underscored, lowercase).
-
-    This function standardizes them to 'o_dpm' and 'd_dpm' for downstream logic.
-    """
+    """Fetch DARKO data from DPM parquet file"""
     print("Fetching DARKO data...")
-    remote_url = "https://www.dropbox.com/scl/fi/yxpvvv2ttm2udevahiufs/darko_career_dpm_talent.parq?rlkey=isq4ols3uhxlod2fkisbn33d7&dl=1"
-
+    url = "https://www.dropbox.com/scl/fi/yxpvvv2ttm2udevahiufs/darko_career_dpm_talent.parq?rlkey=isq4ols3uhxlod2fkisbn33d7&dl=1"
+    
     try:
-        # Try reading the remote parquet directly (requires pyarrow/fastparquet)
-        darko = pd.read_parquet(remote_url)
-        print("  Loaded DARKO from remote URL")
+        # Try direct parquet reading first
+        darko = pd.read_parquet(url)
     except (ImportError, Exception) as e:
-        print(f"  Direct remote parquet reading failed: {e}")
-        print("  Downloading remote file and reading locally...")
-
-        response = requests.get(remote_url, timeout=60)
+        print(f"  Direct parquet reading failed: {e}")
+        print("  Downloading file and reading locally...")
+        
+        # Download the file first
+        response = requests.get(url, timeout=60)
         response.raise_for_status()
-
+        
+        # Save temporarily and read
         temp_file = "temp_darko.parquet"
         with open(temp_file, 'wb') as f:
             f.write(response.content)
-
+        
         try:
+            # Try reading the downloaded parquet file
             darko = pd.read_parquet(temp_file)
-            print("  Successfully read downloaded parquet file")
+            print("  Successfully read parquet file locally")
         except Exception as parquet_error:
             print(f"  Local parquet reading failed: {parquet_error}")
             print("  This suggests pyarrow/fastparquet is not installed")
             print("  Please install pyarrow: pip install pyarrow")
             raise ImportError("pyarrow is required for parquet support. Install with: pip install pyarrow")
         finally:
+            # Clean up temp file
             if os.path.exists(temp_file):
                 os.remove(temp_file)
-
-    # Normalize expected columns
-    rename_map = {}
-    cols = set(darko.columns)
-    # DPM columns
-    if 'O-DPM' in cols:
-        rename_map['O-DPM'] = 'o_dpm'
-    if 'D-DPM' in cols:
-        rename_map['D-DPM'] = 'd_dpm'
-    if 'ODPM' in cols:
-        rename_map['ODPM'] = 'o_dpm'
-    if 'DDPM' in cols:
-        rename_map['DDPM'] = 'd_dpm'
-    # Talent columns (multiple possible variants)
-    if 'O-TALENT' in cols:
-        rename_map['O-TALENT'] = 'o_talent'
-    if 'D-TALENT' in cols:
-        rename_map['D-TALENT'] = 'd_talent'
-    if 'o_dpm_talent' in cols:
-        rename_map['o_dpm_talent'] = 'o_talent'
-    if 'd_dpm_talent' in cols:
-        rename_map['d_dpm_talent'] = 'd_talent'
-    if 'ODPM_TALENT' in cols:
-        rename_map['ODPM_TALENT'] = 'o_talent'
-    if 'DDPM_TALENT' in cols:
-        rename_map['DDPM_TALENT'] = 'd_talent'
-    if rename_map:
-        darko = darko.rename(columns=rename_map)
-
+    
     print(f"  Loaded {len(darko)} DARKO records")
     return darko
 
@@ -688,49 +656,44 @@ def main():
         
         # DARKO
         darko_df = darko.copy()
-        # Filter for target season and get latest data per player
+        # Filter for current season (2025) and get most recent daily record per player
         if 'season' in darko_df.columns:
             try:
-                seasons = [int(s) for s in pd.Series(darko_df['season']).dropna().unique()]
-                target_season = 2025 if 2025 in seasons else max(seasons) if seasons else None
-                if target_season is not None:
-                    darko_df = darko_df[darko_df['season'] == target_season]
+                # Use the latest available season (handles float/int like 2026.0)
+                season_series = pd.to_numeric(darko_df['season'], errors='coerce')
+                if season_series.notna().any():
+                    target_season = int(season_series.max())
                     print(f"  Using DARKO season: {target_season}")
+                    darko_df = darko_df[season_series == target_season]
+                else:
+                    print("  WARNING: DARKO 'season' not parseable; using all rows")
             except Exception:
-                # If anything goes wrong, keep as-is
-                pass
-        darko_df = darko_df.sort_values(['player_name', 'season'], ascending=[True, False])
-        darko_df = darko_df.drop_duplicates(subset='player_name', keep='first')
+                print("  WARNING: Failed to parse DARKO 'season'; using all rows")
         
-        # DEBUG: Check Evan Mobley's data
-        evan_mobley_darko = darko_df[darko_df['player_name'].str.contains('Mobley', case=False, na=False)]
-        if len(evan_mobley_darko) > 0:
-            print(f"\nDEBUG: Found {len(evan_mobley_darko)} Evan Mobley records in DARKO data")
-            print(f"DEBUG: DARKO columns: {list(darko_df.columns)}")
-            print(f"DEBUG: Evan Mobley DARKO data:")
-            dpm_cols = [c for c in evan_mobley_darko.columns if 'dpm' in c.lower() or c in ['player_name', 'team_name', 'season']]
-            print(evan_mobley_darko[dpm_cols].to_string())
-            # Show the actual DPM values
-            if 'O-DPM' in evan_mobley_darko.columns:
-                print(f"DEBUG: Evan Mobley O-DPM (Offense): {evan_mobley_darko['O-DPM'].iloc[0]}")
-            if 'D-DPM' in evan_mobley_darko.columns:
-                print(f"DEBUG: Evan Mobley D-DPM (Defense): {evan_mobley_darko['D-DPM'].iloc[0]}")
-            if 'O-DPM' in evan_mobley_darko.columns and 'D-DPM' in evan_mobley_darko.columns:
-                total = evan_mobley_darko['O-DPM'].iloc[0] + evan_mobley_darko['D-DPM'].iloc[0]
-                print(f"DEBUG: Evan Mobley Total DPM: {total}")
+        # Choose latest record per player using best available date-like column
+        date_candidates = ['date','dt','as_of','calc_date','run_date','game_date','game_dt','day','day_dt','updated_at','timestamp']
+        date_col = None
+        for cand in date_candidates:
+            if cand in darko_df.columns:
+                parsed = pd.to_datetime(darko_df[cand], errors='coerce')
+                if parsed.notna().any():
+                    darko_df['_parsed_date'] = parsed
+                    date_col = cand
+                    break
+        if date_col is not None:
+            # Keep the last (most recent) record per player
+            darko_df = darko_df.sort_values(['player_name', '_parsed_date'])
+            darko_df = darko_df.drop_duplicates(subset='player_name', keep='last')
+            darko_df = darko_df.drop(columns=['_parsed_date'])
+        else:
+            # Fallback: keep last occurrence per player based on file order
+            darko_df = darko_df.reset_index()
+            darko_df = darko_df.sort_values(['player_name', 'index'])
+            darko_df = darko_df.groupby('player_name', as_index=False).tail(1)
+            darko_df = darko_df.drop(columns=['index'])
         
         darko_df['normalized_name'] = darko_df['player_name'].apply(normalize_name)
-        team_source_col = 'team_name'
-        if 'team_name' not in darko_df.columns:
-            if 'team' in darko_df.columns:
-                team_source_col = 'team'
-            elif 'team_abbreviation' in darko_df.columns:
-                team_source_col = 'team_abbreviation'
-            else:
-                # Create an empty team column if none exists
-                darko_df['team_name'] = ''
-                team_source_col = 'team_name'
-        darko_df['normalized_team'] = darko_df[team_source_col].apply(normalize_team)
+        darko_df['normalized_team'] = darko_df['team_name'].apply(normalize_team)
         darko_df['match_key'] = darko_df['normalized_name'] + '|' + darko_df['normalized_team']
         darko_df['name_only'] = darko_df['normalized_name']
         
@@ -847,18 +810,6 @@ def main():
                 for col, val in lebron_dict[match_key].items():
                     if col not in ['match_key', 'name_only']:
                         combined.at[idx, col] = val
-        
-        # DEBUG: Check Evan Mobley's combined data after all merges
-        evan_mobley_combined = combined[combined['final_player_name'].str.contains('Mobley', case=False, na=False) if 'final_player_name' in combined.columns else combined['player_name'].str.contains('Mobley', case=False, na=False)]
-        if len(evan_mobley_combined) > 0:
-            print(f"\nDEBUG: Evan Mobley in combined data after merges")
-            darko_cols = [c for c in combined.columns if 'darko' in c.lower()]
-            print(f"DEBUG: DARKO-related columns in combined: {darko_cols}")
-            if darko_cols:
-                print(f"DEBUG: Evan Mobley DARKO values:")
-                for col in darko_cols:
-                    val = evan_mobley_combined[col].iloc[0] if len(evan_mobley_combined) > 0 else None
-                    print(f"  {col}: {val}")
         
         # Add final columns with proper capitalization
         # Use LeBRON player name if available, otherwise use roster name
@@ -1000,43 +951,15 @@ def main():
         else:
             cs['xrapm_def'] = None
             
-        # Check for DARKO columns - prefer TALENT (long-term ability), fallback to DPM
-        # After adding prefix 'darko_', talent columns become 'darko_o_talent'/'darko_d_talent'.
-        if 'darko_o_talent' in combined.columns:
-            cs['darko_off'] = combined['darko_o_talent']
-        elif 'darko_O-TALENT' in combined.columns:
-            cs['darko_off'] = combined['darko_O-TALENT']
-        elif 'darko_o_dpm' in combined.columns:
+        if 'darko_o_dpm' in combined.columns:
             cs['darko_off'] = combined['darko_o_dpm']
-        elif 'darko_O-DPM' in combined.columns:
-            cs['darko_off'] = combined['darko_O-DPM']
-        elif 'darko_o-dpm' in combined.columns:
-            cs['darko_off'] = combined['darko_o-dpm']
         else:
             cs['darko_off'] = None
             
-        if 'darko_d_talent' in combined.columns:
-            cs['darko_def'] = combined['darko_d_talent']
-        elif 'darko_D-TALENT' in combined.columns:
-            cs['darko_def'] = combined['darko_D-TALENT']
-        elif 'darko_d_dpm' in combined.columns:
+        if 'darko_d_dpm' in combined.columns:
             cs['darko_def'] = combined['darko_d_dpm']
-        elif 'darko_D-DPM' in combined.columns:
-            cs['darko_def'] = combined['darko_D-DPM']
-        elif 'darko_d-dpm' in combined.columns:
-            cs['darko_def'] = combined['darko_d-dpm']
         else:
             cs['darko_def'] = None
-
-        # Backward compatibility for existing website/chart fields expecting
-        # oDARKO/dDARKO and a precomputed Ovr-DARKO. Duplicate values so the
-        # page can read either naming scheme without breaking.
-        try:
-            cs['oDARKO'] = cs['darko_off']
-            cs['dDARKO'] = cs['darko_def']
-            cs['Ovr-DARKO'] = cs['oDARKO'] + cs['dDARKO']
-        except Exception:
-            pass
             
         if 'epm_oepm' in combined.columns:
             cs['epm_off'] = combined['epm_oepm']
