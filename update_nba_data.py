@@ -661,6 +661,23 @@ def main():
         darko_df = darko_df.sort_values(['player_name', 'season'], ascending=[True, False])
         darko_df = darko_df.drop_duplicates(subset='player_name', keep='first')
         
+        # DEBUG: Check Evan Mobley's data
+        evan_mobley_darko = darko_df[darko_df['player_name'].str.contains('Mobley', case=False, na=False)]
+        if len(evan_mobley_darko) > 0:
+            print(f"\nDEBUG: Found {len(evan_mobley_darko)} Evan Mobley records in DARKO data")
+            print(f"DEBUG: DARKO columns: {list(darko_df.columns)}")
+            print(f"DEBUG: Evan Mobley DARKO data:")
+            dpm_cols = [c for c in evan_mobley_darko.columns if 'dpm' in c.lower() or c in ['player_name', 'team_name', 'season']]
+            print(evan_mobley_darko[dpm_cols].to_string())
+            # Show the actual DPM values
+            if 'O-DPM' in evan_mobley_darko.columns:
+                print(f"DEBUG: Evan Mobley O-DPM (Offense): {evan_mobley_darko['O-DPM'].iloc[0]}")
+            if 'D-DPM' in evan_mobley_darko.columns:
+                print(f"DEBUG: Evan Mobley D-DPM (Defense): {evan_mobley_darko['D-DPM'].iloc[0]}")
+            if 'O-DPM' in evan_mobley_darko.columns and 'D-DPM' in evan_mobley_darko.columns:
+                total = evan_mobley_darko['O-DPM'].iloc[0] + evan_mobley_darko['D-DPM'].iloc[0]
+                print(f"DEBUG: Evan Mobley Total DPM: {total}")
+        
         darko_df['normalized_name'] = darko_df['player_name'].apply(normalize_name)
         darko_df['normalized_team'] = darko_df['team_name'].apply(normalize_team)
         darko_df['match_key'] = darko_df['normalized_name'] + '|' + darko_df['normalized_team']
@@ -779,6 +796,18 @@ def main():
                 for col, val in lebron_dict[match_key].items():
                     if col not in ['match_key', 'name_only']:
                         combined.at[idx, col] = val
+        
+        # DEBUG: Check Evan Mobley's combined data after all merges
+        evan_mobley_combined = combined[combined['final_player_name'].str.contains('Mobley', case=False, na=False) if 'final_player_name' in combined.columns else combined['player_name'].str.contains('Mobley', case=False, na=False)]
+        if len(evan_mobley_combined) > 0:
+            print(f"\nDEBUG: Evan Mobley in combined data after merges")
+            darko_cols = [c for c in combined.columns if 'darko' in c.lower()]
+            print(f"DEBUG: DARKO-related columns in combined: {darko_cols}")
+            if darko_cols:
+                print(f"DEBUG: Evan Mobley DARKO values:")
+                for col in darko_cols:
+                    val = evan_mobley_combined[col].iloc[0] if len(evan_mobley_combined) > 0 else None
+                    print(f"  {col}: {val}")
         
         # Add final columns with proper capitalization
         # Use LeBRON player name if available, otherwise use roster name
@@ -920,15 +949,36 @@ def main():
         else:
             cs['xrapm_def'] = None
             
-        if 'darko_o_dpm' in combined.columns:
+        # Check for DARKO columns - try both underscore and hyphen versions
+        # Source parquet uses 'O-DPM' and 'D-DPM'. After prefixing with 'darko_',
+        # those become 'darko_O-DPM' and 'darko_D-DPM'. Fall back to older names.
+        if 'darko_O-DPM' in combined.columns:
+            cs['darko_off'] = combined['darko_O-DPM']
+        elif 'darko_o_dpm' in combined.columns:
             cs['darko_off'] = combined['darko_o_dpm']
+        elif 'darko_o-dpm' in combined.columns:
+            cs['darko_off'] = combined['darko_o-dpm']
         else:
             cs['darko_off'] = None
             
-        if 'darko_d_dpm' in combined.columns:
+        if 'darko_D-DPM' in combined.columns:
+            cs['darko_def'] = combined['darko_D-DPM']
+        elif 'darko_d_dpm' in combined.columns:
             cs['darko_def'] = combined['darko_d_dpm']
+        elif 'darko_d-dpm' in combined.columns:
+            cs['darko_def'] = combined['darko_d-dpm']
         else:
             cs['darko_def'] = None
+
+        # Backward compatibility for existing website/chart fields expecting
+        # oDARKO/dDARKO and a precomputed Ovr-DARKO. Duplicate values so the
+        # page can read either naming scheme without breaking.
+        try:
+            cs['oDARKO'] = cs['darko_off']
+            cs['dDARKO'] = cs['darko_def']
+            cs['Ovr-DARKO'] = cs['oDARKO'] + cs['dDARKO']
+        except Exception:
+            pass
             
         if 'epm_oepm' in combined.columns:
             cs['epm_off'] = combined['epm_oepm']
