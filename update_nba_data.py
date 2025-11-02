@@ -319,40 +319,57 @@ def fetch_lebron_data():
     return lebron
 
 def fetch_darko_data():
-    """Fetch DARKO data from DPM parquet file"""
+    """Fetch DARKO data from the remote parquet URL only, then normalize columns.
+
+    Expected offensive/defensive columns in the source parquet may be either:
+      - 'O-DPM' and 'D-DPM' (hyphenated, uppercase), or
+      - 'o_dpm' and 'd_dpm' (underscored, lowercase).
+
+    This function standardizes them to 'o_dpm' and 'd_dpm' for downstream logic.
+    """
     print("Fetching DARKO data...")
-    url = "https://www.dropbox.com/scl/fi/yxpvvv2ttm2udevahiufs/darko_career_dpm_talent.parq?rlkey=isq4ols3uhxlod2fkisbn33d7&dl=1"
-    
+    remote_url = "https://www.dropbox.com/scl/fi/yxpvvv2ttm2udevahiufs/darko_career_dpm_talent.parq?rlkey=isq4ols3uhxlod2fkisbn33d7&dl=1"
+
     try:
-        # Try direct parquet reading first
-        darko = pd.read_parquet(url)
+        # Try reading the remote parquet directly (requires pyarrow/fastparquet)
+        darko = pd.read_parquet(remote_url)
+        print("  Loaded DARKO from remote URL")
     except (ImportError, Exception) as e:
-        print(f"  Direct parquet reading failed: {e}")
-        print("  Downloading file and reading locally...")
-        
-        # Download the file first
-        response = requests.get(url, timeout=60)
+        print(f"  Direct remote parquet reading failed: {e}")
+        print("  Downloading remote file and reading locally...")
+
+        response = requests.get(remote_url, timeout=60)
         response.raise_for_status()
-        
-        # Save temporarily and read
+
         temp_file = "temp_darko.parquet"
         with open(temp_file, 'wb') as f:
             f.write(response.content)
-        
+
         try:
-            # Try reading the downloaded parquet file
             darko = pd.read_parquet(temp_file)
-            print("  Successfully read parquet file locally")
+            print("  Successfully read downloaded parquet file")
         except Exception as parquet_error:
             print(f"  Local parquet reading failed: {parquet_error}")
             print("  This suggests pyarrow/fastparquet is not installed")
             print("  Please install pyarrow: pip install pyarrow")
             raise ImportError("pyarrow is required for parquet support. Install with: pip install pyarrow")
         finally:
-            # Clean up temp file
             if os.path.exists(temp_file):
                 os.remove(temp_file)
-    
+
+    # Normalize expected columns
+    rename_map = {}
+    if 'O-DPM' in darko.columns:
+        rename_map['O-DPM'] = 'o_dpm'
+    if 'D-DPM' in darko.columns:
+        rename_map['D-DPM'] = 'd_dpm'
+    if 'ODPM' in darko.columns:
+        rename_map['ODPM'] = 'o_dpm'
+    if 'DDPM' in darko.columns:
+        rename_map['DDPM'] = 'd_dpm'
+    if rename_map:
+        darko = darko.rename(columns=rename_map)
+
     print(f"  Loaded {len(darko)} DARKO records")
     return darko
 
@@ -656,8 +673,17 @@ def main():
         
         # DARKO
         darko_df = darko.copy()
-        # Filter for current season (2025) and get latest data per player
-        darko_df = darko_df[darko_df['season'] == 2025]
+        # Filter for target season and get latest data per player
+        if 'season' in darko_df.columns:
+            try:
+                seasons = [int(s) for s in pd.Series(darko_df['season']).dropna().unique()]
+                target_season = 2025 if 2025 in seasons else max(seasons) if seasons else None
+                if target_season is not None:
+                    darko_df = darko_df[darko_df['season'] == target_season]
+                    print(f"  Using DARKO season: {target_season}")
+            except Exception:
+                # If anything goes wrong, keep as-is
+                pass
         darko_df = darko_df.sort_values(['player_name', 'season'], ascending=[True, False])
         darko_df = darko_df.drop_duplicates(subset='player_name', keep='first')
         
@@ -679,7 +705,17 @@ def main():
                 print(f"DEBUG: Evan Mobley Total DPM: {total}")
         
         darko_df['normalized_name'] = darko_df['player_name'].apply(normalize_name)
-        darko_df['normalized_team'] = darko_df['team_name'].apply(normalize_team)
+        team_source_col = 'team_name'
+        if 'team_name' not in darko_df.columns:
+            if 'team' in darko_df.columns:
+                team_source_col = 'team'
+            elif 'team_abbreviation' in darko_df.columns:
+                team_source_col = 'team_abbreviation'
+            else:
+                # Create an empty team column if none exists
+                darko_df['team_name'] = ''
+                team_source_col = 'team_name'
+        darko_df['normalized_team'] = darko_df[team_source_col].apply(normalize_team)
         darko_df['match_key'] = darko_df['normalized_name'] + '|' + darko_df['normalized_team']
         darko_df['name_only'] = darko_df['normalized_name']
         
