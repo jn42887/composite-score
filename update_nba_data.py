@@ -483,12 +483,18 @@ def get_current_teams_nba_com():
                 continue
             
             soup = BeautifulSoup(response.content, 'html.parser')
-            player_links = soup.find_all('a', href=lambda x: x and '/player/' in str(x))
+            # Restrict scraping to players listed inside tables on the roster page
+            player_links = []
+            for table in soup.find_all('table'):
+                player_links.extend(table.find_all('a', href=lambda x: x and '/player/' in str(x)))
             
             seen_players = set()
             for link in player_links:
                 player_name = link.text.strip()
                 if not player_name or len(player_name) < 3:
+                    continue
+                # Heuristic: skip items that don't look like full names
+                if ' ' not in player_name:
                     continue
                 normalized = normalize_name(player_name)
                 if normalized not in seen_players:
