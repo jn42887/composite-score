@@ -492,7 +492,10 @@ def get_current_teams_nba_com():
                 normalized = normalize_name(player_name)
                 if normalized not in seen_players:
                     seen_players.add(normalized)
-                    player_to_team[normalized] = team_abbr
+                    # Only set the team the first time we see a player; this avoids
+                    # overwriting with non-roster references (e.g., history/honors) from other pages
+                    if normalized not in player_to_team:
+                        player_to_team[normalized] = team_abbr
         except:
             continue
     
@@ -931,12 +934,17 @@ def main():
             combined['xrapm_Defense(*)'] = -1*combined['xrapm_Defense(*)']
         
         # Assign metrics - keep NaN for missing data (don't fill with 0, as 0 is an actual value)
-        if 'lebron_predOLEBRON' in combined.columns:
+        # Prefer multi-year LEBRON fields when available
+        if 'lebron_multiOLEBRON' in combined.columns:
+            cs['lebron_off'] = combined['lebron_multiOLEBRON']
+        elif 'lebron_predOLEBRON' in combined.columns:
             cs['lebron_off'] = combined['lebron_predOLEBRON']
         else:
             cs['lebron_off'] = None
             
-        if 'lebron_predDLEBRON' in combined.columns:
+        if 'lebron_multiDLEBRON' in combined.columns:
+            cs['lebron_def'] = combined['lebron_multiDLEBRON']
+        elif 'lebron_predDLEBRON' in combined.columns:
             cs['lebron_def'] = combined['lebron_predDLEBRON']
         else:
             cs['lebron_def'] = None
