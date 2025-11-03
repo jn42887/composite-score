@@ -474,7 +474,8 @@ def get_current_teams_nba_com():
     for i, (team_id, team_abbr) in enumerate(nba_teams.items()):
         try:
             team_name = team_names[team_abbr]
-            url = f"https://www.nba.com/team/{team_id}/{team_name}"
+            # Prefer dedicated roster page to avoid non-roster mentions
+            url = f"https://www.nba.com/team/{team_id}/{team_name}/roster"
             time.sleep(random.uniform(1.0, 2.0))
             
             response = requests.get(url, headers=headers, timeout=10)
