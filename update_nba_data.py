@@ -592,6 +592,52 @@ def get_current_teams_api():
         return get_current_teams_nba_com()
 
     # Build mapping
+    team_full_to_abbr = {
+        'atlanta hawks': 'ATL', 'hawks': 'ATL',
+        'boston celtics': 'BOS', 'celtics': 'BOS',
+        'brooklyn nets': 'BKN', 'new jersey nets': 'BKN', 'nets': 'BKN', 'brk': 'BKN',
+        'charlotte hornets': 'CHA', 'hornets': 'CHA', 'charlotte': 'CHA', 'cho': 'CHA',
+        'chicago bulls': 'CHI', 'bulls': 'CHI',
+        'cleveland cavaliers': 'CLE', 'cavaliers': 'CLE', 'cavs': 'CLE',
+        'dallas mavericks': 'DAL', 'mavericks': 'DAL', 'mavs': 'DAL',
+        'denver nuggets': 'DEN', 'nuggets': 'DEN',
+        'detroit pistons': 'DET', 'pistons': 'DET',
+        'golden state warriors': 'GSW', 'warriors': 'GSW',
+        'houston rockets': 'HOU', 'rockets': 'HOU',
+        'indiana pacers': 'IND', 'pacers': 'IND',
+        'los angeles clippers': 'LAC', 'la clippers': 'LAC', 'clippers': 'LAC',
+        'los angeles lakers': 'LAL', 'la lakers': 'LAL', 'lakers': 'LAL',
+        'memphis grizzlies': 'MEM', 'grizzlies': 'MEM',
+        'miami heat': 'MIA', 'heat': 'MIA',
+        'milwaukee bucks': 'MIL', 'bucks': 'MIL',
+        'minnesota timberwolves': 'MIN', 'timberwolves': 'MIN', 'wolves': 'MIN',
+        'new orleans pelicans': 'NOP', 'pelicans': 'NOP', 'no pelicans': 'NOP',
+        'new york knicks': 'NYK', 'knicks': 'NYK',
+        'oklahoma city thunder': 'OKC', 'thunder': 'OKC',
+        'orlando magic': 'ORL', 'magic': 'ORL',
+        'philadelphia 76ers': 'PHI', '76ers': 'PHI', 'sixers': 'PHI',
+        'phoenix suns': 'PHX', 'suns': 'PHX', 'pho': 'PHX',
+        'portland trail blazers': 'POR', 'trail blazers': 'POR', 'blazers': 'POR',
+        'sacramento kings': 'SAC', 'kings': 'SAC',
+        'san antonio spurs': 'SAS', 'spurs': 'SAS',
+        'toronto raptors': 'TOR', 'raptors': 'TOR',
+        'utah jazz': 'UTA', 'jazz': 'UTA',
+        'washington wizards': 'WAS', 'wizards': 'WAS',
+    }
+    def to_abbr(team_raw: str) -> str:
+        if not isinstance(team_raw, str):
+            return ''
+        t = team_raw.strip().lower()
+        # normalize common punctuation/spacing
+        t = t.replace('.', '').replace(',', '').replace('-', ' ').replace('  ', ' ').strip()
+        # direct map of full names/aliases
+        if t in team_full_to_abbr:
+            return team_full_to_abbr[t]
+        # if already looks like a 3-letter code
+        if len(t) == 3 and t.isalpha():
+            return t.upper()
+        # fallback to existing normalizer (handles BRK/PHO/CHO/NOP/TOT)
+        return normalize_team(team_raw)
     player_to_team = {}
     for _, row in df.iterrows():
         player = str(row[player_col]).strip()
@@ -599,7 +645,7 @@ def get_current_teams_api():
         if not player or not team:
             continue
         normalized = normalize_name(player)
-        team_abbr = normalize_team(team)
+        team_abbr = to_abbr(team)
         player_to_team[normalized] = team_abbr
 
     print(f"  Found current teams for {len(player_to_team)} players (CIS API)")
