@@ -16,9 +16,6 @@ import random
 # Read credentials from environment variables (GitHub Actions will provide these)
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
 EPM_API_KEY = os.getenv('EPM_API_KEY')
-CIS_API_URL = 'https://cis.cavs.com/CIS.API/Query/58/Execute'
-# Read CIS API key from environment (set in GitHub Actions secrets). Do NOT hardcode defaults.
-CIS_API_KEY = os.getenv('CIS_API_KEY')
 
 # GitHub settings
 GITHUB_USERNAME = 'jn42887'
@@ -522,116 +519,70 @@ def get_current_teams_nba_com():
     print(f"  Found current teams for {len(player_to_team)} players")
     return player_to_team
 
-def get_current_teams_api():
-    """Fetch current teams from CIS API and return mapping normalized_name -> team abbr.
-
-    The API returns columns: Player, Team
+def get_current_teams_from_epm():
+    """Fetch current teams from EPM API season-epm endpoint and return mapping normalized_name -> team abbr.
+    
+    Uses /api/v1/season-epm which has team_id and team_alias (team abbreviation) fields.
     """
-    print("Fetching current NBA rosters from CIS API...")
+    print("Fetching current NBA rosters from EPM API (season-epm)...")
 
-    if not CIS_API_KEY:
-        print("  ERROR: CIS_API_KEY is not set. Cannot fetch current teams.")
+    if not EPM_API_KEY:
+        print("  ERROR: EPM_API_KEY is not set. Cannot fetch current teams.")
         return {}
 
-    # Try different header formats and also query parameter
-    response = None
-    last_error = None
+    # Get current season (2025)
+    current_season = 2025
+    url = "https://dunksandthrees.com/api/v1/season-epm"
     
-    # Try headers first
-    headers_list = [
-        {'x-api-key': CIS_API_KEY},
-        {'X-API-KEY': CIS_API_KEY},
-        {'Authorization': f'Bearer {CIS_API_KEY}'},
-        {'Authorization': CIS_API_KEY}
-    ]
+    headers = {
+        "Authorization": EPM_API_KEY,
+        "Accept": "application/json"
+    }
     
-    for headers in headers_list:
-        try:
-            r = requests.get(CIS_API_URL, headers=headers, timeout=30)
-            if r.status_code == 200 and r.text:
-                response = r
-                print(f"  ✓ CIS API request succeeded with headers: {list(headers.keys())[0]}")
-                break
-            else:
-                last_error = f"Status {r.status_code}: {r.text[:200]}"
-        except Exception as e:
-            last_error = str(e)
-            continue
+    params = {
+        "season": current_season,
+        "seasontype": 2  # Regular season
+    }
     
-    # If headers failed, try query parameter
-    if response is None:
-        try:
-            r = requests.get(CIS_API_URL, params={'key': CIS_API_KEY}, timeout=30)
-            if r.status_code == 200 and r.text:
-                response = r
-                print(f"  ✓ CIS API request succeeded with query parameter")
-            else:
-                last_error = f"Status {r.status_code}: {r.text[:200]}"
-        except Exception as e:
-            last_error = str(e)
-
-    if response is None:
-        print(f"  ERROR: CIS API request failed (last error: {last_error})")
-        return {}
-
-    # Try JSON first
-    df = None
     try:
+        response = requests.get(url, headers=headers, params=params, timeout=30)
+        response.raise_for_status()
         data = response.json()
-        # If the JSON is nested, try a couple common shapes
-        if isinstance(data, dict):
-            # common keys that might contain rows
-            for key in ['data', 'rows', 'value', 'Data', 'Rows', 'Value']:
-                if key in data and isinstance(data[key], list):
-                    df = pd.DataFrame(data[key])
-                    break
-            if df is None and all(k in data for k in ['Player', 'Team']):
-                df = pd.DataFrame([data])
-        elif isinstance(data, list):
-            df = pd.DataFrame(data)
-    except Exception:
-        df = None
-
-    # If JSON failed, try parsing as CSV/TSV
-    if df is None:
+        
+        if not data or not isinstance(data, list):
+            print("  ERROR: EPM API returned no data or invalid format")
+            return {}
+        
+        # Build mapping from player_name to team_alias
+        player_to_team = {}
+        for record in data:
+            player_name = record.get('player_name')
+            team_alias = record.get('team_alias')
+            
+            if not player_name or not team_alias:
+                continue
+            
+            normalized = normalize_name(str(player_name).strip())
+            team_abbr = normalize_team(str(team_alias).strip())
+            player_to_team[normalized] = team_abbr
+        
+        # Debug summary
         try:
-            import io
-            df = pd.read_csv(io.StringIO(response.text))
+            team_counts = pd.Series(list(player_to_team.values())).value_counts().to_dict()
+            top_counts = dict(list(team_counts.items())[:10])
+            print(f"  Found current teams for {len(player_to_team)} players (EPM API)")
+            print(f"  Team counts (top): {top_counts}")
         except Exception:
-            df = None
-
-    if df is None or df.empty:
-        print("  ERROR: CIS API returned no rows or unparseable data")
+            print(f"  Found current teams for {len(player_to_team)} players (EPM API)")
+        
+        return player_to_team
+        
+    except requests.exceptions.RequestException as e:
+        print(f"  ERROR: EPM API request failed: {e}")
         return {}
-
-    # Standardize column names (case-insensitive match)
-    col_map = {c.lower(): c for c in df.columns}
-    player_col = col_map.get('player')
-    team_col = col_map.get('team')
-    if not player_col or not team_col:
-        print(f"  ERROR: CIS API missing expected 'Player'/'Team' columns. Available columns: {list(df.columns)}")
+    except Exception as e:
+        print(f"  ERROR: Failed to process EPM API response: {e}")
         return {}
-
-    # Build mapping (Team column is already a 3-letter abbreviation per user)
-    player_to_team = {}
-    for _, row in df.iterrows():
-        player = str(row[player_col]).strip()
-        team = str(row[team_col]).strip()
-        if not player or not team:
-            continue
-        normalized = normalize_name(player)
-        team_abbr = normalize_team(team)
-        player_to_team[normalized] = team_abbr
-
-    # Debug summary to confirm distribution across teams
-    try:
-        team_counts = pd.Series(list(player_to_team.values())).value_counts().to_dict()
-        top_counts = dict(list(team_counts.items())[:10])
-        print(f"  Found current teams for {len(player_to_team)} players (CIS API)")
-        print(f"  Team counts (top): {top_counts}")
-    except Exception:
-        print(f"  Found current teams for {len(player_to_team)} players (CIS API)")
-    return player_to_team
 
 # ============================================================================
 # MERGE FUNCTIONS
@@ -688,9 +639,9 @@ def main():
         xrapm = fetch_xrapm_data()
         skills = fetch_skills_data()
         
-        # 2. Get NBA rosters from CIS API as base dataset
-        print("\nGetting NBA rosters from CIS API as base dataset...")
-        current_teams = get_current_teams_api()
+        # 2. Get NBA rosters from EPM API as base dataset
+        print("\nGetting NBA rosters from EPM API as base dataset...")
+        current_teams = get_current_teams_from_epm()
         
         # Create base dataset from scraped rosters
         roster_data = []
@@ -719,7 +670,12 @@ def main():
         if len(base_df) < initial_base_count:
             print(f"  Removed {initial_base_count - len(base_df)} duplicate entries from roster base")
         
-        print(f"Created base dataset with {len(base_df)} unique players from HTML scraping")
+        print(f"Created base dataset with {len(base_df)} unique players from EPM API")
+        
+        if len(base_df) == 0:
+            print("  ERROR: No players found in base dataset. Cannot proceed.")
+            print("  This likely means the EPM API failed or returned no data.")
+            return
         
         # 3. Prepare datasets for merging
         print("\nPreparing datasets for merge...")
