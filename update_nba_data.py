@@ -16,6 +16,9 @@ import random
 # Read credentials from environment variables (GitHub Actions will provide these)
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
 EPM_API_KEY = os.getenv('EPM_API_KEY')
+CIS_API_URL = 'https://cis.cavs.com/CIS.API/Query/58/Execute'
+# Read CIS API key from environment (set in GitHub Actions secrets). Do NOT hardcode defaults.
+CIS_API_KEY = os.getenv('CIS_API_KEY')
 
 # GitHub settings
 GITHUB_USERNAME = 'jn42887'
@@ -483,10 +486,20 @@ def get_current_teams_nba_com():
                 continue
             
             soup = BeautifulSoup(response.content, 'html.parser')
-            # Restrict scraping to players listed inside tables on the roster page
+            # Restrict scraping to the roster table only: the table whose header contains a 'PLAYER' column
             player_links = []
+            roster_tables = []
             for table in soup.find_all('table'):
-                player_links.extend(table.find_all('a', href=lambda x: x and '/player/' in str(x)))
+                thead = table.find('thead')
+                if not thead:
+                    continue
+                headers = [th.get_text(strip=True).upper() for th in thead.find_all('th')]
+                if any(h in ('PLAYER', 'NAME') for h in headers):
+                    roster_tables.append(table)
+            tables_to_scan = roster_tables if roster_tables else soup.find_all('table')
+            for table in tables_to_scan:
+                tbody = table.find('tbody') or table
+                player_links.extend(tbody.find_all('a', href=lambda x: x and '/player/' in str(x)))
             
             seen_players = set()
             for link in player_links:
@@ -507,6 +520,89 @@ def get_current_teams_nba_com():
             continue
     
     print(f"  Found current teams for {len(player_to_team)} players")
+    return player_to_team
+
+def get_current_teams_api():
+    """Fetch current teams from CIS API and return mapping normalized_name -> team abbr.
+
+    The API returns columns: Player, Team
+    """
+    print("Fetching current NBA rosters from CIS API...")
+
+    if not CIS_API_KEY:
+        print("  WARNING: CIS_API_KEY is not set. Falling back to NBA.com scraping.")
+        return get_current_teams_nba_com()
+
+    headers_list = [
+        {'x-api-key': CIS_API_KEY},
+        {'X-API-KEY': CIS_API_KEY},
+        {'Authorization': CIS_API_KEY}
+    ]
+
+    response = None
+    for headers in headers_list:
+        try:
+            r = requests.get(CIS_API_URL, headers=headers, timeout=30)
+            if r.status_code == 200 and r.text:
+                response = r
+                break
+        except Exception:
+            continue
+
+    if response is None:
+        print("  WARNING: CIS API request failed; falling back to NBA.com scraping")
+        return get_current_teams_nba_com()
+
+    # Try JSON first
+    df = None
+    try:
+        data = response.json()
+        # If the JSON is nested, try a couple common shapes
+        if isinstance(data, dict):
+            # common keys that might contain rows
+            for key in ['data', 'rows', 'value', 'Data', 'Rows', 'Value']:
+                if key in data and isinstance(data[key], list):
+                    df = pd.DataFrame(data[key])
+                    break
+            if df is None and all(k in data for k in ['Player', 'Team']):
+                df = pd.DataFrame([data])
+        elif isinstance(data, list):
+            df = pd.DataFrame(data)
+    except Exception:
+        df = None
+
+    # If JSON failed, try parsing as CSV/TSV
+    if df is None:
+        try:
+            import io
+            df = pd.read_csv(io.StringIO(response.text))
+        except Exception:
+            df = None
+
+    if df is None or df.empty:
+        print("  WARNING: CIS API returned no rows; falling back to NBA.com scraping")
+        return get_current_teams_nba_com()
+
+    # Standardize column names (case-insensitive match)
+    col_map = {c.lower(): c for c in df.columns}
+    player_col = col_map.get('player')
+    team_col = col_map.get('team')
+    if not player_col or not team_col:
+        print("  WARNING: CIS API missing expected 'Player'/'Team' columns; falling back")
+        return get_current_teams_nba_com()
+
+    # Build mapping
+    player_to_team = {}
+    for _, row in df.iterrows():
+        player = str(row[player_col]).strip()
+        team = str(row[team_col]).strip()
+        if not player or not team:
+            continue
+        normalized = normalize_name(player)
+        team_abbr = normalize_team(team)
+        player_to_team[normalized] = team_abbr
+
+    print(f"  Found current teams for {len(player_to_team)} players (CIS API)")
     return player_to_team
 
 # ============================================================================
@@ -564,9 +660,9 @@ def main():
         xrapm = fetch_xrapm_data()
         skills = fetch_skills_data()
         
-        # 2. Get NBA rosters via HTML scraping as base dataset
-        print("\nGetting NBA rosters via HTML scraping as base dataset...")
-        current_teams = get_current_teams_nba_com()
+        # 2. Get NBA rosters from CIS API as base dataset
+        print("\nGetting NBA rosters from CIS API as base dataset...")
+        current_teams = get_current_teams_api()
         
         # Create base dataset from scraped rosters
         roster_data = []
