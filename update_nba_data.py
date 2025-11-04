@@ -530,28 +530,49 @@ def get_current_teams_api():
     print("Fetching current NBA rosters from CIS API...")
 
     if not CIS_API_KEY:
-        print("  WARNING: CIS_API_KEY is not set. Falling back to NBA.com scraping.")
-        return get_current_teams_nba_com()
+        print("  ERROR: CIS_API_KEY is not set. Cannot fetch current teams.")
+        return {}
 
+    # Try different header formats and also query parameter
+    response = None
+    last_error = None
+    
+    # Try headers first
     headers_list = [
         {'x-api-key': CIS_API_KEY},
         {'X-API-KEY': CIS_API_KEY},
+        {'Authorization': f'Bearer {CIS_API_KEY}'},
         {'Authorization': CIS_API_KEY}
     ]
-
-    response = None
+    
     for headers in headers_list:
         try:
             r = requests.get(CIS_API_URL, headers=headers, timeout=30)
             if r.status_code == 200 and r.text:
                 response = r
+                print(f"  ✓ CIS API request succeeded with headers: {list(headers.keys())[0]}")
                 break
-        except Exception:
+            else:
+                last_error = f"Status {r.status_code}: {r.text[:200]}"
+        except Exception as e:
+            last_error = str(e)
             continue
+    
+    # If headers failed, try query parameter
+    if response is None:
+        try:
+            r = requests.get(CIS_API_URL, params={'key': CIS_API_KEY}, timeout=30)
+            if r.status_code == 200 and r.text:
+                response = r
+                print(f"  ✓ CIS API request succeeded with query parameter")
+            else:
+                last_error = f"Status {r.status_code}: {r.text[:200]}"
+        except Exception as e:
+            last_error = str(e)
 
     if response is None:
-        print("  WARNING: CIS API request failed; falling back to NBA.com scraping")
-        return get_current_teams_nba_com()
+        print(f"  ERROR: CIS API request failed (last error: {last_error})")
+        return {}
 
     # Try JSON first
     df = None
@@ -580,16 +601,16 @@ def get_current_teams_api():
             df = None
 
     if df is None or df.empty:
-        print("  WARNING: CIS API returned no rows; falling back to NBA.com scraping")
-        return get_current_teams_nba_com()
+        print("  ERROR: CIS API returned no rows or unparseable data")
+        return {}
 
     # Standardize column names (case-insensitive match)
     col_map = {c.lower(): c for c in df.columns}
     player_col = col_map.get('player')
     team_col = col_map.get('team')
     if not player_col or not team_col:
-        print("  WARNING: CIS API missing expected 'Player'/'Team' columns; falling back")
-        return get_current_teams_nba_com()
+        print(f"  ERROR: CIS API missing expected 'Player'/'Team' columns. Available columns: {list(df.columns)}")
+        return {}
 
     # Build mapping (Team column is already a 3-letter abbreviation per user)
     player_to_team = {}
