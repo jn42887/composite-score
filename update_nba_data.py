@@ -530,8 +530,8 @@ def get_current_teams_from_epm():
         print("  ERROR: EPM_API_KEY is not set. Cannot fetch current teams.")
         return {}
 
-    # Get current season (2025)
-    current_season = 2025
+    # Get current season (2026)
+    current_season = 2026
     url = "https://dunksandthrees.com/api/v1/season-epm"
     
     headers = {
