@@ -224,43 +224,6 @@ def normalize_team(team):
     }
     return team_mapping.get(team, team)
 
-def push_to_github(df, file_path, commit_message=None):
-    """Push a dataframe as CSV to GitHub"""
-    if commit_message is None:
-        commit_message = f"Auto-update {file_path} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-    
-    csv_content = df.to_csv(index=False, na_rep='')
-    content_encoded = base64.b64encode(csv_content.encode()).decode()
-    
-    api_url = f'https://api.github.com/repos/{GITHUB_USERNAME}/{REPO_NAME}/contents/{file_path}'
-    headers = {
-        'Authorization': f'token {GITHUB_TOKEN}',
-        'Accept': 'application/vnd.github.v3+json',
-    }
-    
-    response = requests.get(api_url, headers=headers)
-    sha = None
-    if response.status_code == 200:
-        sha = response.json()['sha']
-    
-    data = {
-        'message': commit_message,
-        'content': content_encoded,
-        'branch': BRANCH,
-    }
-    if sha:
-        data['sha'] = sha
-    
-    response = requests.put(api_url, headers=headers, json=data)
-    
-    if response.status_code in [200, 201]:
-        print(f"✓ Successfully pushed {file_path} to GitHub!")
-        return True
-    else:
-        print(f"✗ Failed to push {file_path}")
-        print(f"  Status: {response.status_code}")
-        return False
-
 def scale_to_target(series, target_mean, target_std):
     """Scale a series to have target mean and std, handling NaN values"""
     valid_data = series.dropna()
@@ -1136,11 +1099,13 @@ def main():
         print("\nPushing to GitHub...")
         
         # Push composite scores
-        push_to_github(cs, 'Composite Projections copy.csv')
+        cs.to_csv('Composite Projections copy.csv', index=False)
+        print("✓ Saved Composite Projections copy.csv")
         
         # Push skills data
         if not skills.empty:
-            push_to_github(skills, 'skills_data_full_response.csv')
+            skills.to_csv('skills_data_full_response.csv', index=False)
+            print("✓ Saved skills_data_full_response.csv")
         
         print("\n" + "=" * 60)
         print("✓ Update Complete!")
