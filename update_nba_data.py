@@ -1036,20 +1036,19 @@ def main():
         epm_def_mean = cs['epm_def'].mean(skipna=True)
         epm_def_std = cs['epm_def'].std(skipna=True) if pd.notna(epm_def_mean) else 0
         
-        cs['lebron_off_scaled'] = scale_to_target(cs['lebron_off'], epm_off_mean, epm_off_std)
+        # LEBRON data removed from composite - using EPM, xRAPM, and DARKO only
         cs['xrapm_off_scaled'] = scale_to_target(cs['xrapm_off'], epm_off_mean, epm_off_std)
         cs['darko_off_scaled'] = scale_to_target(cs['darko_off'], epm_off_mean, epm_off_std)
         cs['epm_off_scaled'] = cs['epm_off']
         
-        cs['lebron_def_scaled'] = scale_to_target(cs['lebron_def'], epm_def_mean, epm_def_std)
         cs['xrapm_def_scaled'] = scale_to_target(cs['xrapm_def'], epm_def_mean, epm_def_std)
         cs['darko_def_scaled'] = scale_to_target(cs['darko_def'], epm_def_mean, epm_def_std)
         cs['epm_def_scaled'] = cs['epm_def']
         
         # Calculate combined metrics - only average available (non-NaN) metrics
-        # This will return NaN if all metrics are missing
-        cs['combined_off'] = cs[['lebron_off_scaled', 'xrapm_off_scaled', 'darko_off_scaled', 'epm_off_scaled']].mean(axis=1, skipna=True)
-        cs['combined_def'] = cs[['lebron_def_scaled', 'xrapm_def_scaled', 'darko_def_scaled', 'epm_def_scaled']].mean(axis=1, skipna=True)
+        # Using EPM, xRAPM, and DARKO (LEBRON removed due to data issues)
+        cs['combined_off'] = cs[['xrapm_off_scaled', 'darko_off_scaled', 'epm_off_scaled']].mean(axis=1, skipna=True)
+        cs['combined_def'] = cs[['xrapm_def_scaled', 'darko_def_scaled', 'epm_def_scaled']].mean(axis=1, skipna=True)
         # combined_tot will be NaN if either combined_off or combined_def is NaN
         cs['combined_tot'] = cs['combined_off'] + cs['combined_def']
         
