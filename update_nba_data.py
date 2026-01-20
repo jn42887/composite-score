@@ -745,9 +745,9 @@ def main():
             darko_df = darko_df.groupby('player_name', as_index=False).tail(1)
             darko_df = darko_df.drop(columns=['index'])
         
-        darko_df['normalized_name'] = darko_df['player_name'].apply(normalize_name)
-        darko_df['normalized_team'] = darko_df['team_name'].apply(normalize_team)
-        darko_df['match_key'] = darko_df['normalized_name'] + '|' + darko_df['normalized_team']
+        darko_df['normalized_name'] = darko_df['player_name'].astype(str).apply(normalize_name)
+        darko_df['normalized_team'] = darko_df['team_name'].astype(str).apply(normalize_team)
+        darko_df['match_key'] = darko_df['normalized_name'].astype(str) + '|' + darko_df['normalized_team'].astype(str)
         darko_df['name_only'] = darko_df['normalized_name']
         
         # xRAPM
