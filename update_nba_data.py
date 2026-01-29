@@ -272,15 +272,6 @@ def fetch_epm_data():
     print(f"  Loaded {len(df_epm)} EPM records")
     return df_epm
 
-def fetch_lebron_data():
-    """Fetch Lebron data from CSV"""
-    print("Fetching Lebron data...")
-    url = "https://r2-bbi.fanspo.com/all_impact_metrics_all_seasons.csv"
-    lebron = pd.read_csv(url)
-    lebron = lebron[lebron['Year'] == 2025]
-    print(f"  Loaded {len(lebron)} Lebron records")
-    return lebron
-
 def fetch_darko_data():
     """Fetch DARKO data from DPM parquet file"""
     print("Fetching DARKO data...")
@@ -597,7 +588,6 @@ def main():
     try:
         # 1. Fetch all datasets
         epm = fetch_epm_data()
-        lebron = fetch_lebron_data()
         darko = fetch_darko_data()
         xrapm = fetch_xrapm_data()
         skills = fetch_skills_data()
@@ -683,30 +673,6 @@ def main():
         
         print(f"  Deduplicated EPM data: {len(epm)} -> {len(epm_df)} -> {len(epm_agg)} unique entries")
         
-        # Lebron
-        lebron_df = lebron.copy()
-        # Deduplicate LEBRON data - if same player appears multiple times, keep the one with most recent/complete data
-        lebron_df['normalized_name'] = lebron_df['player_name'].apply(normalize_name)
-        lebron_df['normalized_team'] = lebron_df['Tm'].apply(normalize_team)
-        lebron_df['match_key'] = lebron_df['normalized_name'] + '|' + lebron_df['normalized_team']
-        lebron_df['name_only'] = lebron_df['normalized_name']
-        
-        # Sort by name and team, then drop duplicates - this ensures we keep one entry per player+team combo
-        # If same player appears with same team, keep first (could add additional sorting by Year/other fields if needed)
-        lebron_df = lebron_df.sort_values(['normalized_name', 'normalized_team', 'Year'], ascending=[True, True, False])
-        lebron_df = lebron_df.drop_duplicates(subset=['match_key'], keep='first')
-        
-        # Also deduplicate by name_only - if same player name appears multiple times (different teams), keep the one with MULTI team
-        # MULTI/TOT entries are aggregate stats across teams, which are more accurate
-        lebron_df = lebron_df.sort_values(['name_only', 'normalized_team'], ascending=[True, True])
-        # Prefer MULTI teams (they represent aggregate stats)
-        lebron_df['team_priority'] = lebron_df['normalized_team'].apply(lambda x: 1 if x == 'MULTI' else 0)
-        lebron_df = lebron_df.sort_values(['name_only', 'team_priority'], ascending=[True, False])
-        lebron_df = lebron_df.drop_duplicates(subset=['name_only'], keep='first')
-        lebron_df = lebron_df.drop('team_priority', axis=1)
-        
-        print(f"  Deduplicated LEBRON data: {len(lebron)} -> {len(lebron_df)} unique players")
-        
         # DARKO
         darko_df = darko.copy()
         # Filter for current season (2025) and get most recent daily record per player
@@ -778,9 +744,6 @@ def main():
         xrapm_df_merged = xrapm_df.add_prefix('xrapm_')
         xrapm_df_merged = xrapm_df_merged.rename(columns={'xrapm_match_key': 'match_key', 'xrapm_name_only': 'name_only'})
         
-        lebron_df_merged = lebron_df.add_prefix('lebron_')
-        lebron_df_merged = lebron_df_merged.rename(columns={'lebron_match_key': 'match_key', 'lebron_name_only': 'name_only'})
-        
         # Start merge with roster base
         print("Merging datasets with roster as base...")
         combined = base_df.copy()
@@ -843,32 +806,11 @@ def main():
                     if col not in ['match_key', 'name_only']:
                         combined.at[idx, col] = val
         
-        # Match LeBRON
-        lebron_match_map = {}
-        # Track which LEBRON entries have been matched to prevent duplicates
-        matched_lebron_keys = set()
-        for idx, row in combined.iterrows():
-            match_key, score = find_match_multi_strategy(row['match_key'], row['name_only'], lebron_df_merged)
-            if match_key:
-                # Check if this LEBRON entry was already matched to another roster entry
-                if match_key in matched_lebron_keys:
-                    print(f"  WARNING: LEBRON entry {match_key} already matched, skipping duplicate match for roster entry {row['normalized_name']}")
-                    continue
-                matched_lebron_keys.add(match_key)
-                lebron_match_map[idx] = match_key
-        
-        lebron_dict = lebron_df_merged.set_index('match_key').to_dict('index')
-        for idx, match_key in lebron_match_map.items():
-            if match_key in lebron_dict:
-                for col, val in lebron_dict[match_key].items():
-                    if col not in ['match_key', 'name_only']:
-                        combined.at[idx, col] = val
-        
         # Add final columns with proper capitalization
-        # Use LeBRON player name if available, otherwise use roster name
+        # Prefer EPM player name (usually the cleanest), otherwise use roster/normalized name
         def get_final_name(row):
-            if pd.notna(row.get('lebron_player_name')):
-                return capitalize_name(row['lebron_player_name'])
+            if pd.notna(row.get('epm_player_name')):
+                return capitalize_name(row['epm_player_name'])
             else:
                 return capitalize_name(row['player_name'])
         
@@ -882,9 +824,6 @@ def main():
         # Count how many data sources each player has
         def count_data_sources(row):
             count = 0
-            if any(col.startswith('lebron_') and pd.notna(row.get(col)) and row.get(col) != 0 
-                   for col in combined.columns if col.startswith('lebron_')):
-                count += 1
             if any(col.startswith('epm_') and pd.notna(row.get(col)) and row.get(col) != 0 
                    for col in combined.columns if col.startswith('epm_')):
                 count += 1
@@ -916,8 +855,6 @@ def main():
         # Check if player has data in any of the metrics sources
         has_data = []
         for idx, row in combined.iterrows():
-            has_lebron = any(col.startswith('lebron_') and pd.notna(row.get(col)) and row.get(col) != 0 
-                           for col in combined.columns if col.startswith('lebron_'))
             has_epm = any(col.startswith('epm_') and pd.notna(row.get(col)) and row.get(col) != 0 
                         for col in combined.columns if col.startswith('epm_'))
             has_darko = any(col.startswith('darko_') and pd.notna(row.get(col)) and row.get(col) != 0 
@@ -925,7 +862,7 @@ def main():
             has_xrapm = any(col.startswith('xrapm_') and pd.notna(row.get(col)) and row.get(col) != 0 
                           for col in combined.columns if col.startswith('xrapm_'))
             
-            has_data.append(has_lebron or has_epm or has_darko or has_xrapm)
+            has_data.append(has_epm or has_darko or has_xrapm)
         
         combined['has_data'] = has_data
         combined = combined[combined['has_data']].drop('has_data', axis=1)
@@ -945,60 +882,26 @@ def main():
         
         # Add basic info - use defaults for missing data
         cs['Season'] = 2025  # Current season
-        
-        # Use LeBRON age when available, don't default to 25 if missing
-        if 'lebron_Age' in combined.columns:
-            cs['Age'] = combined['lebron_Age']  # Keep NaN if missing
+
+        # LEBRON removed. Use EPM fields if present; otherwise fall back to sane defaults.
+        if 'epm_age' in combined.columns:
+            cs['Age'] = combined['epm_age'].fillna(25)
         else:
-            cs['Age'] = None  # Explicitly None if column doesn't exist
-        
-        # Use LeBRON position when available, otherwise default to 'G'
-        if 'lebron_Position' in combined.columns:
-            cs['Pos'] = combined['lebron_Position'].fillna('G')
+            cs['Age'] = 25
+
+        if 'epm_position' in combined.columns:
+            cs['Pos'] = combined['epm_position'].fillna('G')
+        elif 'epm_pos' in combined.columns:
+            cs['Pos'] = combined['epm_pos'].fillna('G')
         else:
             cs['Pos'] = 'G'
-        
-        # Try to get Lebron data where available
-        if 'lebron_Year' in combined.columns:
-            cs['lebron_Year'] = combined['lebron_Year'].fillna(2025)
-        else:
-            cs['lebron_Year'] = 2025
-            
-        if 'lebron_Age' in combined.columns:
-            cs['lebron_Age'] = combined['lebron_Age']  # Keep NaN if missing
-        else:
-            cs['lebron_Age'] = None
-            
-        if 'lebron_Position' in combined.columns:
-            cs['lebron_Position'] = combined['lebron_Position'].fillna('G')
-        else:
-            cs['lebron_Position'] = 'G'
-        
-        # Calculate MP65 if Lebron data available
-        if 'lebron_MIN' in combined.columns and 'lebron_G' in combined.columns:
-            cs['MP65'] = (combined['lebron_MIN'] / combined['lebron_G'] * 65).fillna(30)
-        else:
-            cs['MP65'] = 30  # Default minutes
+
+        cs['MP65'] = 30  # Default minutes
         # Handle xRAPM defense (invert if available)
         if 'xrapm_Defense(*)' in combined.columns:
             combined['xrapm_Defense(*)'] = -1*combined['xrapm_Defense(*)']
         
         # Assign metrics - keep NaN for missing data (don't fill with 0, as 0 is an actual value)
-        # Prefer multi-year LEBRON fields when available
-        if 'lebron_multiOLEBRON' in combined.columns:
-            cs['lebron_off'] = combined['lebron_multiOLEBRON']
-        elif 'lebron_predOLEBRON' in combined.columns:
-            cs['lebron_off'] = combined['lebron_predOLEBRON']
-        else:
-            cs['lebron_off'] = None
-            
-        if 'lebron_multiDLEBRON' in combined.columns:
-            cs['lebron_def'] = combined['lebron_multiDLEBRON']
-        elif 'lebron_predDLEBRON' in combined.columns:
-            cs['lebron_def'] = combined['lebron_predDLEBRON']
-        else:
-            cs['lebron_def'] = None
-            
         if 'xrapm_Offense' in combined.columns:
             cs['xrapm_off'] = combined['xrapm_Offense']
         else:
